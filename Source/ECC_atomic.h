@@ -9,6 +9,19 @@
 #ifndef ECC_atomic_h
 #define ECC_atomic_h
 
+#if __APPLE__
+#ifndef _OSATOMIC_H_
+#include <libkern/OSAtomic.h>
+#endif
+#endif
+
+#if _MSC_VER
+#ifndef __INTRIN_H
+#include <intrin.h>
+#endif
+#endif
+
+
 /*
 	atomic operations are performed in such a way that they will not be
 	interrupted by other threads
@@ -35,19 +48,6 @@
 	bits of the address are zero otherwise behavior may be undefined on
 	some platforms
 */
-
-
-#if __APPLE__
-#ifndef _OSATOMIC_H_
-#include <libkern/OSAtomic.h>
-#endif
-#endif
-
-#if _MSC_VER
-#ifndef __INTRIN_H
-#include <intrin.h>
-#endif
-#endif
 
 
 #define ECC_interruptible_compare_and_swap(_address,_old,_new) (*(_address)==(_old)?*(_address)=(_new),1:0)
@@ -139,13 +139,25 @@ static inline uint32_t ECC_interruptible_or_32(uint32_t *address, uint32_t bits)
 #define ECC_atomic_test_and_clear ECC_interruptible_test_and_clear
 #define ECC_atomic_test_and_flip  ECC_interruptible_test_and_flip
 
+#define ECC_atomic_barrier()
+
 #endif
 
 
-//	intrinsics
+/*
+	bit counting intrinsics
+	
+	note that counting leading and trailing bits is undefined or platform
+	dependent for the value zero even with software fallbacks
+	
+	software fallbacks are provided for missing intrinsics with credit to
+	https://graphics.stanford.edu/~seander/bithacks.html
+*/
 
 
 #if __GNUC__
+
+#define ECC_INTRINSICS 1
 
 #define ECC_count_leading_zeros_32 __builtin_clz
 #define ECC_count_trailing_zeros_32 __builtin_ctz
@@ -159,6 +171,8 @@ static inline uint32_t ECC_interruptible_or_32(uint32_t *address, uint32_t bits)
 
 #elif _MSC_VER
 
+#define ECC_INTRINSICS 1
+
 #define ECC_count_leading_zeros_32 __lzcnt
 #define ECC_count_set_bits_32 __popcount
 
@@ -170,23 +184,40 @@ static inline uint32_t ECC_interruptible_or_32(uint32_t *address, uint32_t bits)
 #endif
 
 
-#ifndef ECC_count_leading_zeros_32
-//	unsupported
+#ifndef ECC_count_trailing_zeros_32
+#ifdef ECC_count_leading_zeros_32
+#define ECC_count_trailing_zeros_32(_x) (31-ECC_count_leading_zeros_32((_x)&-(_x)))
+#else
+#define ECC_DeBruijnBitPosition_32 "\x00\x01\x1C\x02\x1D\x0E\x18\x03\x1E\x16\x14\x0F\x19\x11\x04\x08\x1F\x1B\x0D\x17\x15\x13\x10\x07\x1A\x0C\x12\x06\x0B\x05\x0A\x09"
+#define ECC_count_trailing_zeros_32(_x) ECC_DeBruijnBitPosition_32[((uint32_t)(((_x)&-(_x))*0x077CB531U))>>27]
+#endif
 #endif
 
-#ifndef ECC_count_trailing_zeros_32
-#define ECC_MultiplyDeBruijnBitPosition_32 "\x00\x01\x1C\x02\x1D\x0E\x18\x03\x1E\x16\x14\x0F\x19\x11\x04\x08\x1F\x1B\x0D\x17\x15\x13\x10\x07\x1A\x0C\x12\x06\x0B\x05\x0A\x09"
-#define ECC_count_trailing_zeros_32(_x) ECC_MultiplyDeBruijnBitPosition_32[((((_x)&-(_x))*0x077CB531UL)>>27)&0x1F]
+#ifndef ECC_count_leading_zeros_32
+static inline unsigned ECC_count_leading_zeros_32(uint32_t x) {
+	static const unsigned char kDeBruijnBitPosition[32] = {
+		31, 22, 30, 21, 18, 10, 29, 2, 20, 17, 15, 13, 9, 6, 28, 1,
+		23, 19, 11, 3, 16, 14, 7, 24, 12, 4, 8, 25, 5, 26, 27, 0
+	};
+	
+	x |= x >> 1; x |= x >> 2; x |= x >> 4; x |= x >> 8; x |= x >> 16;
+	
+	return kDeBruijnBitPosition[((uint32_t)(x*0x07C4ACDDU))>>27];
+}
 #endif
 
 #ifndef ECC_count_set_bits_32
-#define ECC_count_set_bits_8(_x) ((((((unsigned)(_x)&0x00FF)*0x08040201)>>3)&0x11111111)%0x0F)
+#define ECC_count_set_bits_8(_x) ((((((uint32_t)(_x)&0x00FFU)*0x08040201U)>>3)&0x11111111U)%0x0F)
 #define ECC_count_set_bits_32(_x) (ECC_count_set_bits_8(_x)+ECC_count_set_bits_8((_x)>>8)+ECC_count_set_bits_8((_x)>>16)+ECC_count_set_bits_8((_x)>>24))
 #endif
 
 #if __LP64__
 #ifndef ECC_count_trailing_zeros_64
-#define ECC_count_trailing_zeros_64(_x) (((_x)&0xFFFFFFFFU)?ECC_count_trailing_zeros_32((_x)&0xFFFFFFFFU):(32+ECC_count_trailing_zeros_32((_x)>>32)))
+#define ECC_count_trailing_zeros_64(_x) (((uint32_t)(_x))?ECC_count_trailing_zeros_32(_x):(32+ECC_count_trailing_zeros_32((_x)>>32)))
+#endif
+
+#ifndef ECC_count_leading_zeros_64
+#define ECC_count_leading_zeros_64(_x) (((_x)>>32)?ECC_count_leading_zeros_32((_x)>>32):(32+ECC_count_leading_zeros_32(_x)))
 #endif
 
 #ifndef ECC_count_set_bits_64
@@ -195,11 +226,21 @@ static inline uint32_t ECC_interruptible_or_32(uint32_t *address, uint32_t bits)
 #endif
 
 
-//	utilities
+/*
+	bit manipulation utilities
+	
+	0 <= n <= 127
+*/
 
 
 #define ECC_clear_least_significant_bit(_x) ((_x)&((_x)-1))
 #define ECC_least_significant_bit(_x) ((_x)&-(_x))
+
+#define ECC_bytes_less_than(_x,_n) (((~0U/255)*(127+(_n))-((_x)&((~0U/255)*127)))&~(_x)&((~0U/255)*128))
+#define ECC_bytes_more_than(_x,_n) (((~0U/255)*(127-(_n))+((_x)&((~0U/255)*127)) |(_x))&((~0U/255)*128))
+
+#define ECC_count_bytes_less_than(_x,_n) ((ECC_bytes_less_than(_x,_n)>>7)%255)
+#define ECC_count_bytes_more_than(_x,_n) ((ECC_bytes_more_than(_x,_n)>>7)%255)
 
 
 #endif /* ECC_atomic_h */
