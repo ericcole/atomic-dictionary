@@ -59,9 +59,9 @@
 
 #ifdef _OSATOMIC_H_
 
-#define ECC_atomic_comapre_and_swap_ptr(_address, _old, _new) OSAtomicCompareAndSwapPtrBarrier(_old, _new, (void * volatile *)(_address))
-#define ECC_atomic_comapre_and_swap_32(_address, _old, _new)  OSAtomicCompareAndSwap32Barrier(_old, _new, (int32_t volatile *)(_address))
-#define ECC_atomic_comapre_and_swap_64(_address, _old, _new)  OSAtomicCompareAndSwap64Barrier(_old, _new, (int64_t volatile *)(_address))
+#define ECC_atomic_compare_and_swap_ptr(_address, _old, _new) OSAtomicCompareAndSwapPtrBarrier(_old, _new, (void * volatile *)(_address))
+#define ECC_atomic_compare_and_swap_32(_address, _old, _new)  OSAtomicCompareAndSwap32Barrier(_old, _new, (int32_t volatile *)(_address))
+#define ECC_atomic_compare_and_swap_64(_address, _old, _new)  OSAtomicCompareAndSwap64Barrier(_old, _new, (int64_t volatile *)(_address))
 
 #define ECC_atomic_add_ptr(_address,_add) ((void *)OSAtomicAdd64Barrier((intptr_t)_add,(int64_t volatile *)(_address)))
 #define ECC_atomic_add_32(_address,_add) OSAtomicAdd32Barrier(_add,(int32_t volatile *)(_address))
@@ -79,9 +79,9 @@
 
 #elif _MSC_VER
 
-#define ECC_atomic_comapre_and_swap_ptr(_address, _old, _new) (_InterlockedCompareExchangePointer((PVOID volatile *)(_address),_new,_old)==(_old))
-#define ECC_atomic_comapre_and_swap_32(_address, _old, _new)  (_InterlockedCompareExchange((LONG volatile *)(_address),_new,_old)==(_old))
-#define ECC_atomic_comapre_and_swap_64(_address, _old, _new)  (_InterlockedCompareExchange64((LONGLONG volatile *)(_address),_new,_old)==(_old))
+#define ECC_atomic_compare_and_swap_ptr(_address, _old, _new) (_InterlockedCompareExchangePointer((PVOID volatile *)(_address),_new,_old)==(_old))
+#define ECC_atomic_compare_and_swap_32(_address, _old, _new)  (_InterlockedCompareExchange((LONG volatile *)(_address),_new,_old)==(_old))
+#define ECC_atomic_compare_and_swap_64(_address, _old, _new)  (_InterlockedCompareExchange64((LONGLONG volatile *)(_address),_new,_old)==(_old))
 
 #define ECC_atomic_add_ptr(_address,_add) ((void *)(_InterlockedExchangeAdd64((LONGLONG volatile *)(_address),(LONGLONG)_add)+(_add)))
 #define ECC_atomic_add_32(_address,_add) (_InterlockedExchangeAdd((LONG volatile *)(_address),_add)+(_add))
@@ -99,9 +99,9 @@
 
 #elif (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__) > 40100
 
-#define ECC_atomic_comapre_and_swap_ptr(_address, _old, _new) __sync_bool_compare_and_swap(_address, _old, _new)
-#define ECC_atomic_comapre_and_swap_32(_address, _old, _new)  __sync_bool_compare_and_swap(_address, _old, _new)
-#define ECC_atomic_comapre_and_swap_64(_address, _old, _new)  __sync_bool_compare_and_swap(_address, _old, _new)
+#define ECC_atomic_compare_and_swap_ptr(_address, _old, _new) __sync_bool_compare_and_swap(_address, _old, _new)
+#define ECC_atomic_compare_and_swap_32(_address, _old, _new)  __sync_bool_compare_and_swap(_address, _old, _new)
+#define ECC_atomic_compare_and_swap_64(_address, _old, _new)  __sync_bool_compare_and_swap(_address, _old, _new)
 
 #define ECC_atomic_add_ptr(_address,_add) __sync_add_and_fetch(_address,_add)
 #define ECC_atomic_add_32(_address,_add)  __sync_add_and_fetch(_address,_add)

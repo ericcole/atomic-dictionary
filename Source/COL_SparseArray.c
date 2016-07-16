@@ -29,17 +29,17 @@
 #define COLA_bits_per_mask 32
 #define COLA_bits_per_math 32
 
-#define COLA_atomic_casp ECC_atomic_comapre_and_swap_ptr
+#define COLA_atomic_casp ECC_atomic_compare_and_swap_ptr
 #define COLA_atomic_addp ECC_atomic_add_ptr
 
 #if COLA_bits_per_node == 64 && LONG_MAX >= 9223372036854775807L
 typedef uint64_t COLA_casn_t;
-#define COLA_atomic_casn ECC_atomic_comapre_and_swap_64
+#define COLA_atomic_casn ECC_atomic_compare_and_swap_64
 #endif
 
 #if COLA_bits_per_node == 32
 typedef uint32_t COLA_casn_t;
-#define COLA_atomic_casn ECC_atomic_comapre_and_swap_32
+#define COLA_atomic_casn ECC_atomic_compare_and_swap_32
 #endif
 
 #if COLA_bits_per_hash == 32
@@ -58,7 +58,7 @@ typedef uint32_t COLA_mask_t;
 
 #if COLA_bits_per_math == 32
 typedef int32_t COLA_math_t;
-#define COLA_atomic_casm ECC_atomic_comapre_and_swap_32
+#define COLA_atomic_casm ECC_atomic_compare_and_swap_32
 #define COLA_atomic_addm ECC_atomic_add_32
 #endif
 
