@@ -35,11 +35,13 @@
 #if COLA_bits_per_node == 64 && LONG_MAX >= 9223372036854775807L
 typedef uint64_t COLA_casn_t;
 #define COLA_atomic_casn ECC_atomic_compare_and_swap_64
+#define COLA_ctzn ECC_count_trailing_zeros_64
 #endif
 
 #if COLA_bits_per_node == 32
 typedef uint32_t COLA_casn_t;
 #define COLA_atomic_casn ECC_atomic_compare_and_swap_32
+#define COLA_ctzn ECC_count_trailing_zeros_32
 #endif
 
 #if COLA_bits_per_hash == 32
@@ -52,8 +54,8 @@ typedef uint32_t COLA_mask_t;
 #define COLA_atomic_andm ECC_atomic_and_32
 #define COLA_atomic_orm  ECC_atomic_or_32
 
-#define COLA_test_bit(_bits,_bit) (_bits[(_bit)/32] & ((_bit)&31))
-#define COLA_set_bit(_bits,_bit) (_bits[(_bit)/32] |= ((_bit)&31))
+#define COLA_test_bit(_bits,_bit) (_bits[(_bit)/32] & (1<<((_bit)&31)))
+#define COLA_set_bit(_bits,_bit) (_bits[(_bit)/32] |= (1<<((_bit)&31)))
 #endif
 
 #if COLA_bits_per_math == 32
@@ -66,6 +68,7 @@ typedef int32_t COLA_math_t;
 #define COLA_bits_per_level 2
 #define COLA_bits_per_entry 8
 #define COLA_maximum_depth 16	//	4^16 >= 2^32
+#define COLA_entry_ones 0x01010101U
 
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 3)
 #endif
@@ -74,6 +77,7 @@ typedef int32_t COLA_math_t;
 #define COLA_bits_per_level 3
 #define COLA_bits_per_entry 8
 #define COLA_maximum_depth 11	//	8^11 >= 2^32
+#define COLA_entry_ones 0x0101010101010101ULL
 
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 7)
 #endif
@@ -81,6 +85,7 @@ typedef int32_t COLA_math_t;
 #if COLA_bits_per_node == 64 && COLA_entries_per_node == 7
 #define COLA_bits_per_entry 9
 #define COLA_maximum_depth 12	//	7^12 >= 2^32
+#define COLA_entry_ones 0x0040201008040201ULL
 
 const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7,7*7*7*7*7*7*7,7*7*7*7*7*7,7*7*7*7*7,7*7*7*7,7*7*7,7*7,7,0};
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
@@ -89,6 +94,7 @@ const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*
 #if COLA_bits_per_node == 64 && COLA_entries_per_node == 6
 #define COLA_bits_per_entry 10
 #define COLA_maximum_depth 13	//	6^13 >= 2^32
+#define COLA_entry_ones 0x0004010040100401ULL
 
 const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6,6*6*6*6*6*6*6,6*6*6*6*6*6,6*6*6*6*6,6*6*6*6,6*6*6,6*6,6,0};
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
@@ -148,7 +154,7 @@ typedef struct COLA_Opaque {
 
 
 #ifndef COLA_warning
-#if 0
+#if 1
 #define COLA_warning(f,...) printf("" f "\n",__VA_ARGS__)
 #else
 #define COLA_warning(f,...)
@@ -156,7 +162,7 @@ typedef struct COLA_Opaque {
 #endif
 
 #ifndef COLA_assert
-#if 0
+#if 1
 void COLA_asserted(int value) {
 	value = 0;
 }
@@ -470,13 +476,18 @@ unsigned COLA_reserve_leaf(COLA cola, unsigned nodeIndex) {
 
 #define COLA_node_not_entombed 1
 
+#define COLA_entry_low_bits (COLA_entry_ones*((1<<(COLA_bits_per_entry-1))-1))
+#define COLA_entry_high_bit (COLA_entry_ones*(1<<(COLA_bits_per_entry-1)))
+#define COLA_node_branch_mask(_node) ((COLA_entry_low_bits+((_node)&COLA_entry_low_bits)|(_node))&COLA_entry_high_bit)
+
 unsigned COLA_node_entombed_entry(COLA_node_t node) {
 	if ( !node ) { return 0; }
 	
-	COLA_node_t branch_mask = ((((node & 0x7F7F7F7F) + 0x7F7F7F7F) | node) & 0x80808080);
+	COLA_node_t branch_mask = COLA_node_branch_mask(node);
 	if ( branch_mask & (branch_mask - 1) ) { return COLA_node_not_entombed; }
 	
-	COLA_node_t lone_branch = ((node >> 24) | (node >> 16) | (node >> 8) | (node)) & COLA_entry_mask;
+	unsigned index = COLA_ctzn(branch_mask) / COLA_bits_per_entry;
+	COLA_node_t lone_branch = COLA_entry_for_index(node, index);
 	if ( COLA_entry_is_node(lone_branch) ) { return COLA_node_not_entombed; }
 	
 	return lone_branch;
