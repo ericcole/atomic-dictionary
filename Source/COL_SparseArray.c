@@ -22,8 +22,8 @@
 #endif
 
 //	32/4, 64/6, 64/7, 64/8
-#define COLA_entries_per_node 4
-#define COLA_bits_per_node 32
+#define COLA_entries_per_node 8
+#define COLA_bits_per_node 64
 
 #define COLA_bits_per_hash 32
 #define COLA_bits_per_mask 32
@@ -36,12 +36,14 @@
 typedef uint64_t COLA_casn_t;
 #define COLA_atomic_casn ECC_atomic_compare_and_swap_64
 #define COLA_ctzn ECC_count_trailing_zeros_64
+#define COLA_NODE_FMT "%016llX"
 #endif
 
 #if COLA_bits_per_node == 32
 typedef uint32_t COLA_casn_t;
 #define COLA_atomic_casn ECC_atomic_compare_and_swap_32
 #define COLA_ctzn ECC_count_trailing_zeros_32
+#define COLA_NODE_FMT "%08X"
 #endif
 
 #if COLA_bits_per_hash == 32
@@ -69,6 +71,7 @@ typedef int32_t COLA_math_t;
 #define COLA_bits_per_entry 8
 #define COLA_maximum_depth 16	//	4^16 >= 2^32
 #define COLA_entry_ones 0x01010101U
+#define COLA_ENTRY_FMT "%02X"
 
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 3)
 #endif
@@ -78,6 +81,7 @@ typedef int32_t COLA_math_t;
 #define COLA_bits_per_entry 8
 #define COLA_maximum_depth 11	//	8^11 >= 2^32
 #define COLA_entry_ones 0x0101010101010101ULL
+#define COLA_ENTRY_FMT "%02llX"
 
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 7)
 #endif
@@ -86,6 +90,7 @@ typedef int32_t COLA_math_t;
 #define COLA_bits_per_entry 9
 #define COLA_maximum_depth 12	//	7^12 >= 2^32
 #define COLA_entry_ones 0x0040201008040201ULL
+#define COLA_ENTRY_FMT "%03llX"
 
 const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7,7*7*7*7*7*7*7,7*7*7*7*7*7,7*7*7*7*7,7*7*7*7,7*7*7,7*7,7,0};
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
@@ -95,8 +100,9 @@ const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*
 #define COLA_bits_per_entry 10
 #define COLA_maximum_depth 13	//	6^13 >= 2^32
 #define COLA_entry_ones 0x0004010040100401ULL
+#define COLA_ENTRY_FMT "%03llX"
 
-const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6,6*6*6*6*6*6*6,6*6*6*6*6*6,6*6*6*6*6,6*6*6*6,6*6*6,6*6,6,0};
+const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6U,6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6,6*6*6*6*6*6*6,6*6*6*6*6*6,6*6*6*6*6,6*6*6*6,6*6*6,6*6,6,0};
 #define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
 #endif
 
@@ -106,7 +112,7 @@ const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*
 #define COLA_entry_mask (COLA_entry_limit-1)
 #define COLA_leaf_count (COLA_entry_limit/4)
 #define COLA_node_count (COLA_entry_limit-COLA_leaf_count)
-#define COLA_bits_count (COLA_node_count / COLA_bits_per_node)
+#define COLA_bits_count (COLA_node_count / COLA_bits_per_mask)
 
 #define COLA_entry_for_index(_node, _index) (((_node) >> ((_index) * COLA_bits_per_entry)) & COLA_entry_mask)
 #define COLA_node_entry_at_index(_entry, _index) ((_entry) << ((_index) * COLA_bits_per_entry))
@@ -115,7 +121,7 @@ const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*
 #define COLA_entry_is_null(_entry) !(_entry)
 #define COLA_entry_is_node(_entry) ((_entry)<COLA_node_count)
 #define COLA_entry_leaf_index(_entry) ((_entry)-(COLA_node_count-1))
-#define COLA_leaf_index_entry(_entry) ((_entry)+(COLA_node_count-1))
+#define COLA_leaf_index_entry(_index) ((_index)+(COLA_node_count-1))
 
 #define COLA_node_index_root (COLA_node_count - 1)
 #define COLA_node_index_last (COLA_node_count - 2)
@@ -339,18 +345,19 @@ unsigned COLA_acquire_node(COLA cola) {
 	
 	head = *pool;
 	node = head & COLA_pool_node_mask;
-	COLA_assert(node < COLA_node_count, "COLA_acquire_node %08X", head);
-	if ( !node ) { COLA_warning("COLA_acquire_node pool depleted %08X", head); return COLA_AcquireFailed; }
+	COLA_assert(node < COLA_node_count, "COLA_acquire_node " COLA_NODE_FMT, head);
+	if ( !node ) { COLA_warning("COLA_acquire_node pool depleted " COLA_NODE_FMT, head); return COLA_AcquireFailed; }
 	
 	peek = nodes[node];
 	next = peek & COLA_pool_node_mask;
 	salt = (head & COLA_pool_salt_mask) + COLA_pool_node_salt;
 	if ( !COLA_atomic_casn(pool, head, next + salt) ) { return COLA_AcquireInterrupted; }
 	
-	COLA_assert(next < COLA_node_count, "COLA_acquire_node %08X", peek);
-	COLA_assert(!COLA_test_bit(cola->recycle.bits, node), "COLA_acquire_node %02X", node);
+	COLA_assert(next < COLA_node_count, "COLA_acquire_node " COLA_NODE_FMT, peek);
+	COLA_assert(!COLA_test_bit(cola->recycle.bits, node), "COLA_acquire_node " COLA_ENTRY_FMT, node);
 	nodes[node] = salt;
-	return node;
+	
+	return (unsigned)node;
 }
 
 void COLA_recycle_nodes(COLA cola, unsigned nodeIndices[], unsigned count) {
@@ -371,7 +378,7 @@ void COLA_recycle_nodes(COLA cola, unsigned nodeIndices[], unsigned count) {
 		head = *pool;
 		next = head & COLA_pool_node_mask;
 		salt = (head & COLA_pool_salt_mask) + COLA_pool_node_salt + COLA_pool_increment;
-		COLA_assert(next < COLA_node_count, "COLA_recycle_nodes %08X", head);
+		COLA_assert(next < COLA_node_count, "COLA_recycle_nodes " COLA_NODE_FMT , head);
 		
 		for ( index = 0 ; index < count ; ++index ) {
 			nodeIndex = nodeIndices[index];
@@ -411,20 +418,20 @@ unsigned COLA_acquire_leaf(COLA cola) {
 	
 	head = *pool;
 	link = head & COLA_entry_mask;
-	if ( !link ) { COLA_warning("COLA_acquire_leaf pool depleted %08X", head); return COLA_AcquireFailed; }
-	COLA_assert(link <= COLA_leaf_count, "COLA_acquire_leaf head %08X", head);
+	if ( !link ) { COLA_warning("COLA_acquire_leaf pool depleted " COLA_NODE_FMT, head); return COLA_AcquireFailed; }
+	COLA_assert(link <= COLA_leaf_count, "COLA_acquire_leaf head " COLA_NODE_FMT, head);
 	
 	salt = head & ~COLA_entry_mask;
 	peek = leaves[link].link;
 	next = peek & COLA_entry_mask;
-	COLA_assert(link != next, "COLA_acquire_leaf %02X next %08X", link, peek);
+	COLA_assert(link != next, "COLA_acquire_leaf " COLA_ENTRY_FMT " next " COLA_NODE_FMT, link, peek);
 	if ( !COLA_atomic_casn(pool, head, next + salt + COLA_entry_limit) ) { return COLA_AcquireInterrupted; }
-	COLA_assert(next <= COLA_leaf_count, "COLA_acquire_leaf next %08X", peek);
+	COLA_assert(next <= COLA_leaf_count, "COLA_acquire_leaf next " COLA_NODE_FMT, peek);
 	
 	leaves[link].link = 0;
 	COLA_atomic_addm(&leaves[link].references, COLA_node_acquired - COLA_node_recycled);
 	
-	return link;
+	return (unsigned)link;
 }
 
 void COLA_recycle_leaf(COLA cola, unsigned nodeIndex) {
@@ -442,8 +449,8 @@ void COLA_recycle_leaf(COLA cola, unsigned nodeIndex) {
 		next = head & COLA_entry_mask;
 		salt = (head & ~COLA_entry_mask) + COLA_entry_limit;
 		
-		COLA_assert(next != nodeIndex, "COLA_recycle_leaf %02X next %08X", nodeIndex, head);
-		COLA_assert(next <= COLA_leaf_count, "COLA_recycle_leaf %02X next %08X", nodeIndex, head);
+		COLA_assert(next != nodeIndex, "COLA_recycle_leaf %02X next " COLA_NODE_FMT, nodeIndex, head);
+		COLA_assert(next <= COLA_leaf_count, "COLA_recycle_leaf %02X next " COLA_NODE_FMT, nodeIndex, head);
 		leaves[nodeIndex].link = next;
 	} while ( !COLA_atomic_casn(pool, head, nodeIndex + salt) );
 }
@@ -490,7 +497,7 @@ unsigned COLA_node_entombed_entry(COLA_node_t node) {
 	COLA_node_t lone_branch = COLA_entry_for_index(node, index);
 	if ( COLA_entry_is_node(lone_branch) ) { return COLA_node_not_entombed; }
 	
-	return lone_branch;
+	return (unsigned)lone_branch;
 }
 
 unsigned COLA_reclaim_tomb(COLA cola, unsigned nodeIndex, COLA_node_t node, unsigned entryIndex, unsigned entry, unsigned recycleIndex) {
@@ -503,7 +510,7 @@ unsigned COLA_reclaim_tomb(COLA cola, unsigned nodeIndex, COLA_node_t node, unsi
 	
 	unsigned recycled = COLA_test_bit(cola->recycle.bits, nodeIndex);
 	if ( COLA_atomic_casn(cola->nodes + nodeIndex, node, changeNode) ) {
-		COLA_assert(!recycled, "COLA_reclaim_tomb %02X %08X ==> %08X", nodeIndex, node, changeNode);
+		COLA_assert(!recycled, "COLA_reclaim_tomb %02X " COLA_NODE_FMT " ==> " COLA_NODE_FMT, nodeIndex, node, changeNode);
 		COLA_release_nodes(cola, &recycleIndex, 1);
 		return 1;
 	}
@@ -625,7 +632,7 @@ COLA_data_t COLA_remove(COLA cola, COLA_hash_t hash) {
 				
 				unsigned recycled = COLA_test_bit(cola->recycle.bits, nodeIndex);
 				if ( COLA_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
-					COLA_assert(!recycled, "COLA_remove %02X %08X ==> %08X", nodeIndex, node, changeNode);
+					COLA_assert(!recycled, "COLA_remove %02X " COLA_NODE_FMT " ==> " COLA_NODE_FMT, nodeIndex, node, changeNode);
 					COLA_atomic_addh(&leaves[COLA_leaf_index_pool].hash, -1);
 					result = leaves[index].value;
 					COLA_dispose_leaf(cola, index);
@@ -801,7 +808,7 @@ COLA_data_t COLA_assign(COLA cola, COLA_hash_t hash, COLA_data_t value, unsigned
 			
 			unsigned recycled = COLA_test_bit(cola->recycle.bits, nodeIndex);
 			if ( COLA_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
-				COLA_assert(!recycled, "COLA_assign %02X %08X ==> %08X", nodeIndex, node, changeNode);
+				COLA_assert(!recycled, "COLA_assign %02X " COLA_NODE_FMT " ==> " COLA_NODE_FMT, nodeIndex, node, changeNode);
 				COLA_atomic_addh(&leaves[COLA_leaf_index_pool].hash, 1);
 				//	own value
 				disposeLeaf = 0;
@@ -835,8 +842,8 @@ COLA_data_t COLA_assign(COLA cola, COLA_hash_t hash, COLA_data_t value, unsigned
 #pragma mark -
 
 unsigned COLA_values_recurse(COLA cola, unsigned depth, unsigned nodeIndex, unsigned used, COLA_hash_t hashes[], COLA_data_t values[], unsigned capacity, unsigned reverse) {
-	COLA_assert(depth < COLA_maximum_depth, "FC4_values %u", depth);
-	COLA_assert(0 < nodeIndex && nodeIndex < COLA_node_count, "FC4_values %u", nodeIndex);
+	COLA_assert(depth < COLA_maximum_depth, "COLA_values %u", depth);
+	COLA_assert(0 < nodeIndex && nodeIndex < COLA_node_count, "COLA_values %u", nodeIndex);
 	
 	unsigned result = used;
 	COLA_node_t volatile *nodes = cola->nodes;
@@ -956,58 +963,64 @@ unsigned COLA_verify_recurse(COLA cola, unsigned nodeIndex, uint32_t seen[]) {
 }
 
 unsigned COLA_verify(COLA cola) {
+	unsigned unverified = 0;
+	unsigned used_leaves = 0;
+	
 	COLA_node_t *nodes = cola->nodes;
 	COLA_leaf_t *leaves = cola->leaves;
 	COLA_leaf_t *pool = leaves + COLA_leaf_index_pool;
 	
-	unsigned used_nodes, unused_nodes, unrecycled_nodes;
-	unsigned used_leaves, unused_leaves;
-	uint32_t seen[COLA_entry_limit/32] = {0};
+	uint32_t nodes_recycled[COLA_entry_limit/32] = {0};
+	uint32_t nodes_acquired[COLA_entry_limit/32] = {0};
 	
-	seen[COLA_node_index_pool/32] |= 1<<(COLA_node_index_pool&31);
-	seen[COLA_node_index_root/32] |= 1<<(COLA_node_index_root&31);
+	COLA_verify_recurse(cola, COLA_node_index_root, nodes_acquired);
 	
-	unrecycled_nodes = 0;
-	for ( unsigned order = 0 ; order < COLA_bits_count ; ++order ) {
-		COLA_mask_t bits = cola->recycle.bits[order];
-		for ( unsigned bit = 0 ; bit < COLA_bits_per_mask ; ++bit ) {
-			if ( bits & (1 << bit) ) unrecycled_nodes += 1;
-		}
-		seen[order] |= bits;
+	COLA_node_t node = nodes[COLA_node_index_pool] & COLA_pool_node_mask;
+	while ( node > 0 && node <= COLA_node_count ) {
+		nodes_recycled[node/32] |= (1<<(node&31));
+		node = nodes[node] & COLA_pool_node_mask;
 	}
 	
-	COLA_node_t node = nodes[COLA_node_index_pool] & 0x00FF;
-	for ( unused_nodes = 0 ; node > 0 && node <= COLA_node_count ; ++unused_nodes ) {
-		if ( !(seen[node/32] ^= (1<<(node&31))) ) break;
-		node = nodes[node] & 0x00FF;
+	COLA_link_t link = leaves[COLA_leaf_index_pool].link & COLA_entry_mask;
+	while ( link > 0 && link <= COLA_leaf_count ) {
+		COLA_link_t entry = COLA_leaf_index_entry(link);
+		nodes_recycled[entry/32] |= (1<<(entry&31));
+		link = leaves[link].link & COLA_entry_mask;
 	}
 	
-	COLA_link_t link = leaves[COLA_leaf_index_pool].link & 0x00FF;
-	for ( unused_leaves = 0 ; link > 0 && link <= COLA_leaf_count ; ++unused_leaves ) {
-		if ( !(seen[(link+191)/32] ^= (1<<((link+191)&31))) ) break;
-		link = leaves[link].link & 0x00FF;
-	}
-	
-	unused_nodes += 1;	//	pool
-	used_nodes = COLA_verify_recurse(cola, COLA_node_index_root, seen);
-	used_leaves = used_nodes >> 16;
-	used_nodes &= 0x0000FFFF;
-	
-	for ( unsigned entry = 1 ; entry < COLA_entry_limit ; ++entry ) {
-		if ( seen[entry/32] & (1<<(entry&31)) ) { continue; }
+	for ( unsigned entry = 1 ; entry <= COLA_node_index_last ; ++entry ) {
+		unsigned is_acquired = (nodes_acquired[entry/32] >> (entry&31)) & 1;
+		unsigned is_recycled = (nodes_recycled[entry/32] >> (entry&31)) & 1;
+		unsigned is_released = COLA_test_bit(cola->recycle.bits, entry) ? 1 : 0;
 		
-		if ( COLA_entry_is_node(entry) ) { COLA_assert(0, "COLA_verify unseen node %02X %08X", entry, nodes[entry]); }
-		else { COLA_assert(0, "COLA_verify unseen leaf %02X L%08X R%08X H%08X", entry-191, leaves[entry-191].link, leaves[entry-191].references, leaves[entry-191].hash); }
+		if ( is_recycled + is_released + is_acquired == 1 ) { continue; }
+		
+		COLA_assert(0, "COLA_verify %c%c%c branch node %02X " COLA_NODE_FMT,
+			is_acquired ? 'a' : '-', is_released ? 'r' : '-', is_recycled ? 'p' : '-',
+			entry, nodes[entry]);
+		
+		unverified += 1;
 	}
 	
-	COLA_assert(used_nodes + unused_nodes + unrecycled_nodes == COLA_node_count, "COLA_verify nodes %u + %u + %u", used_nodes, unused_nodes, unrecycled_nodes);
-	COLA_assert(used_leaves + unused_leaves == COLA_capacity(cola), "COLA_verify leaves %u + %u", used_leaves, unused_leaves);
-	COLA_assert(used_leaves == (pool->hash & 0x0FFF), "COLA_verify leaves %u != %u", used_leaves, pool->hash & 0x0FFF);
-	COLA_assert((pool->references & 0x0FFFFF) == 0, "COLA_verify references %08X", pool->references);
+	for ( unsigned leaf = 1 ; leaf <= COLA_leaf_count ; ++leaf ) {
+		COLA_link_t entry = COLA_leaf_index_entry(leaf);
+		COLA_math_t references = leaves[leaf].references;
+		unsigned is_acquired = (nodes_acquired[entry/32] >> (entry&31)) & 1;
+		unsigned is_recycled = (nodes_recycled[entry/32] >> (entry&31)) & 1;
+		unsigned is_released = (references & (COLA_node_acquired | COLA_node_recycled)) ? 0 : 1;
+		
+		if ( is_acquired ) used_leaves += 1;
+		if ( is_recycled + is_released + is_acquired == 1 ) { continue; }
+		
+		COLA_assert(0, "COLA_verify %c%c%c leaf node %02X L" COLA_NODE_FMT " R%08X H%08X",
+			is_acquired ? 'a' : '-', is_released ? 'r' : '-', is_recycled ? 'p' : '-',
+			leaf, leaves[leaf].link, references, leaves[leaf].hash);
+		
+		unverified += 1;
+	}
 	
-	return
-		(used_leaves + unused_leaves == COLA_capacity(cola) ? 0 : 1) |
-		((used_nodes + unused_nodes + unrecycled_nodes == COLA_node_count) ? 0 : 2) |
-		(unrecycled_nodes == 0 ? 0 : 4) |
-		0;
+	COLA_assert((pool->references & 0x0FFFFF) == 0, "COLA_verify references %08X", pool->references);
+	COLA_assert(used_leaves == (pool->hash & 0x0FFF), "COLA_verify leaves %u != %u", used_leaves, pool->hash & 0x0FFF);
+	
+	return unverified;
 }
