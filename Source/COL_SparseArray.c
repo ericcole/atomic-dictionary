@@ -22,9 +22,10 @@
 #endif
 
 //	32/4, 64/6, 64/7, 64/8
-#define COLA_entries_per_node 8
-#define COLA_bits_per_node 64
+#define COLA_entries_per_node 4
+#define COLA_bits_per_node 32
 
+//	32
 #define COLA_bits_per_hash 32
 #define COLA_bits_per_mask 32
 #define COLA_bits_per_math 32
@@ -73,7 +74,8 @@ typedef int32_t COLA_math_t;
 #define COLA_entry_ones 0x01010101U
 #define COLA_ENTRY_FMT "%02X"
 
-#define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 3)
+//#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)>>((_depth)*2))&3)
+#define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - 2) - ((_depth) * 2))) & 3)
 #endif
 
 #if COLA_bits_per_node == 64 && COLA_entries_per_node == 8
@@ -83,7 +85,8 @@ typedef int32_t COLA_math_t;
 #define COLA_entry_ones 0x0101010101010101ULL
 #define COLA_ENTRY_FMT "%02llX"
 
-#define COLA_entry_index_for_depth(_hash, _depth) (((_hash) >> ((COLA_bits_per_hash - COLA_bits_per_level) - ((_depth) * COLA_bits_per_level))) & 7)
+#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)>>((_depth)*3))&7)
+//#define COLA_entry_index_for_depth(_hash, _depth) (((_depth)<10)?(((_hash)>>((COLA_bits_per_hash-3)-((_depth)*3)))&7):((_hash)&3))
 #endif
 
 #if COLA_bits_per_node == 64 && COLA_entries_per_node == 7
@@ -92,8 +95,9 @@ typedef int32_t COLA_math_t;
 #define COLA_entry_ones 0x0040201008040201ULL
 #define COLA_ENTRY_FMT "%03llX"
 
-const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7,7*7*7*7*7*7*7,7*7*7*7*7*7,7*7*7*7*7,7*7*7*7,7*7*7,7*7,7,0};
-#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
+const COLA_casn_t COLA_divisor_at_depth[] = {1,7,7*7,7*7*7,7*7*7*7,7*7*7*7*7,7*7*7*7*7*7,7*7*7*7*7*7*7,7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*7*7*7*7*7U};
+#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA_divisor_at_depth[(_depth)])%7)
+//#define COLA_entry_index_for_depth(_hash, _depth) (((_depth)<11)?(((_hash)/(3*COLA_divisor_at_depth[10-(_depth)]))%7):((_hash)%3))
 #endif
 
 #if COLA_bits_per_node == 64 && COLA_entries_per_node == 6
@@ -102,8 +106,20 @@ const COLA_casn_t COLA__divisor_at_depth[] = {7*7*7*7*7*7*7*7*7*7*7,7*7*7*7*7*7*
 #define COLA_entry_ones 0x0004010040100401ULL
 #define COLA_ENTRY_FMT "%03llX"
 
-const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6U,6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6,6*6*6*6*6*6*6,6*6*6*6*6*6,6*6*6*6*6,6*6*6*6,6*6*6,6*6,6,0};
-#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA__divisor_at_depth[_depth])%COLA_entries_per_node)
+const COLA_casn_t COLA_divisor_at_depth[] = {1,6,6*6,6*6*6,6*6*6*6,6*6*6*6*6,6*6*6*6*6*6,6*6*6*6*6*6*6,6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6*6,6*6*6*6*6*6*6*6*6*6*6*6U};
+#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA_divisor_at_depth[(_depth)])%6)
+//#define COLA_entry_index_for_depth(_hash, _depth) (((_depth)<12)?(((_hash)/(2*COLA_divisor_at_depth[11-(_depth)]))%6):((_hash)%2))
+#endif
+
+#if COLA_bits_per_node == 64 && COLA_entries_per_node == 5
+#define COLA_bits_per_entry 12
+#define COLA_maximum_depth 14	//	5^14 >= 2^32
+#define COLA_entry_ones 0x0001001001001001ULL
+#define COLA_ENTRY_FMT "%03llX"
+
+const COLA_casn_t COLA_divisor_at_depth[] = {1,5,5*5,5*5*5,5*5*5*5,5*5*5*5*5,5*5*5*5*5*5,5*5*5*5*5*5*5,5*5*5*5*5*5*5*5,5*5*5*5*5*5*5*5*5,5*5*5*5*5*5*5*5*5*5,5*5*5*5*5*5*5*5*5*5*5,5*5*5*5*5*5*5*5*5*5*5*5,5*5*5*5*5*5*5*5*5*5*5*5*5U};
+#define COLA_entry_index_for_depth(_hash, _depth) (((_hash)/COLA_divisor_at_depth[(_depth)])%5)
+//#define COLA_entry_index_for_depth(_hash, _depth) (((_depth)<13)?(((_hash)/(4*COLA_divisor_at_depth[12-(_depth)]))%5):((_hash)%4))
 #endif
 
 #pragma mark -
@@ -115,7 +131,7 @@ const COLA_casn_t COLA__divisor_at_depth[] = {6*6*6*6*6*6*6*6*6*6*6*6U,6*6*6*6*6
 #define COLA_bits_count (COLA_node_count / COLA_bits_per_mask)
 
 #define COLA_entry_for_index(_node, _index) (((_node) >> ((_index) * COLA_bits_per_entry)) & COLA_entry_mask)
-#define COLA_node_entry_at_index(_entry, _index) ((_entry) << ((_index) * COLA_bits_per_entry))
+#define COLA_node_entry_at_index(_entry, _index) ((COLA_node_t)(_entry) << ((_index) * COLA_bits_per_entry))
 #define COLA_node_with_entry_at_index(_node, _entry, _index) (((_node) & ~COLA_node_entry_at_index(COLA_entry_mask,_index)) | COLA_node_entry_at_index(_entry,_index))
 
 #define COLA_entry_is_null(_entry) !(_entry)
@@ -167,6 +183,14 @@ typedef struct COLA_Opaque {
 #endif
 #endif
 
+#ifndef COLA_trace
+#if 0
+#define COLA_trace(f,...) printf("" f "\n",__VA_ARGS__)
+#else
+#define COLA_trace(f,...)
+#endif
+#endif
+
 #ifndef COLA_assert
 #if 1
 void COLA_asserted(int value) {
@@ -181,6 +205,10 @@ void COLA_asserted(int value) {
 
 
 #pragma mark -
+
+unsigned COLA_attributes() {
+	return COLA_bits_per_node + COLA_entries_per_node;
+}
 
 unsigned COLA_size_for_elements(unsigned elements) {
 	return sizeof(COLA_root_t) + sizeof(COLA_leaf_t) * (elements - 7);
@@ -632,6 +660,7 @@ COLA_data_t COLA_remove(COLA cola, COLA_hash_t hash) {
 				
 				unsigned recycled = COLA_test_bit(cola->recycle.bits, nodeIndex);
 				if ( COLA_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
+					COLA_trace("COLA_remove %08X @%2u[%u] node[%02X] " COLA_NODE_FMT " ==> " COLA_NODE_FMT, hash, depth, entryIndex, nodeIndex, node, changeNode);
 					COLA_assert(!recycled, "COLA_remove %02X " COLA_NODE_FMT " ==> " COLA_NODE_FMT, nodeIndex, node, changeNode);
 					COLA_atomic_addh(&leaves[COLA_leaf_index_pool].hash, -1);
 					result = leaves[index].value;
@@ -659,6 +688,7 @@ COLA_data_t COLA_remove(COLA cola, COLA_hash_t hash) {
 		
 		changeNode = COLA_node_with_entry_at_index(node, tomb, entryIndex);
 		if ( !COLA_atomic_casn(nodes + nodeIndex, node, changeNode) ) { break; }
+		COLA_trace("COLA_ascend %08X @%2u[%u] node[%02X] " COLA_NODE_FMT " ==> " COLA_NODE_FMT, hash, ascend - 1, entryIndex, nodeIndex, node, changeNode);
 		
 		recycleNodes[count++] = entry;
 	}
@@ -739,6 +769,7 @@ COLA_data_t COLA_assign(COLA cola, COLA_hash_t hash, COLA_data_t value, unsigned
 				} else if ( result == value ) {
 					break;
 				} else if ( COLA_atomic_casp(&leaves[index].value, result, value) ) {
+					COLA_trace("COLA_assign %08X @%2u[%u] leaf[%2u] %p ==> %p", hash, depth, entryIndex, index, result, value);
 					//	own value
 				} else {
 					retry = 1; break;
@@ -808,6 +839,7 @@ COLA_data_t COLA_assign(COLA cola, COLA_hash_t hash, COLA_data_t value, unsigned
 			
 			unsigned recycled = COLA_test_bit(cola->recycle.bits, nodeIndex);
 			if ( COLA_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
+				COLA_trace("COLA_insert %08X @%2u[%u] node[%02X] " COLA_NODE_FMT " ==> " COLA_NODE_FMT " leaf[%2u] %p", hash, depth, entryIndex, nodeIndex, node, changeNode, assignLeaf, value);
 				COLA_assert(!recycled, "COLA_assign %02X " COLA_NODE_FMT " ==> " COLA_NODE_FMT, nodeIndex, node, changeNode);
 				COLA_atomic_addh(&leaves[COLA_leaf_index_pool].hash, 1);
 				//	own value

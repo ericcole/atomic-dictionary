@@ -80,6 +80,7 @@ enum {
 
 /// COLA_size_for_elements returns the number of bytes needed to store elements
 unsigned COLA_size_for_elements(unsigned elements);
+unsigned COLA_attributes();
 
 /// COLA_allocate and initialize new structure
 COLA COLA_allocate(unsigned elements);
