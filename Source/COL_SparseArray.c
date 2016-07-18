@@ -1042,6 +1042,7 @@ unsigned COLA_verify_recurse(COLA cola, unsigned nodeIndex, uint32_t seen[]) {
 unsigned COLA_verify(COLA cola) {
 	unsigned unverified = 0;
 	unsigned used_leaves = 0;
+	unsigned capacity = COLA_capacity(cola);
 	
 	COLA_node_t *nodes = cola->nodes;
 	COLA_leaf_t *leaves = cola->leaves;
@@ -1059,7 +1060,7 @@ unsigned COLA_verify(COLA cola) {
 	}
 	
 	COLA_link_t link = leaves[COLA_leaf_index_pool].link & COLA_entry_mask;
-	while ( link > 0 && link <= COLA_leaf_count ) {
+	while ( link > 0 && link <= capacity ) {
 		COLA_link_t entry = COLA_leaf_index_entry(link);
 		nodes_recycled[entry/32] |= (1<<(entry&31));
 		link = leaves[link].link & COLA_entry_mask;
@@ -1079,7 +1080,7 @@ unsigned COLA_verify(COLA cola) {
 		unverified += 1;
 	}
 	
-	for ( unsigned leaf = 1 ; leaf <= COLA_leaf_count ; ++leaf ) {
+	for ( unsigned leaf = 1 ; leaf <= capacity ; ++leaf ) {
 		COLA_link_t entry = COLA_leaf_index_entry(leaf);
 		COLA_math_t references = leaves[leaf].references;
 		unsigned is_acquired = (nodes_acquired[entry/32] >> (entry&31)) & 1;
