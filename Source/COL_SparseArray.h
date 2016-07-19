@@ -28,9 +28,10 @@
 	simultaneous.  Retrieving all values sees a snapshot that may not have
 	existed at a distinct point in time.
 	
-	There is a hard limit of 64 leaf and 192 branch nodes that can be stored
-	at once.  In the worst case it could take 444 branch nodes to store 64
-	values but 28 values can be stored even with worst case hashes.
+	Each instance defines a small addressable space for all nodes that imposes
+	a hard limit on the number of leaf and branch nodes available.  There are
+	typically three times more branch nodes than leaf nodes but the worst case
+	hashes can deplete the branch nodes before reaching the leaf capacity.
 	
 	Nodes that are removed are not available for insertion until all methods
 	that interrupted or were interrupted by removal have completed.  Further
@@ -78,18 +79,23 @@ enum {
 	COLA_AssignSum = 4 ,
 };
 
-/// COLA_size_for_elements returns the number of bytes needed to store elements
-unsigned COLA_size_for_elements(unsigned elements);
+/// COLA_attributes based on compile time options
 unsigned COLA_attributes();
 
+/// COLA_maximum_capacity that can be allocated or initialized
+unsigned COLA_maximum_capacity();
+
+/// COLA_size_for_elements returns the number of bytes needed to store elements
+unsigned COLA_size_for_capacity(unsigned capacity);
+
 /// COLA_allocate and initialize new structure
-COLA COLA_allocate(unsigned elements);
+COLA COLA_allocate(unsigned capacity);
 
 /// COLA_deallocate structure regardless of contents
 void COLA_deallocate(COLA sca);
 
-/// COLA_initialize structure before use
-void COLA_initialize(COLA sca, unsigned elements);
+/// COLA_initialize structure before use if not using COLA_allocate
+void COLA_initialize(COLA sca, unsigned capacity);
 
 
 /// COLA_search get the data associoated with hash
