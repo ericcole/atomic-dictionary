@@ -49,7 +49,9 @@
 	bits but are identical through the middle are least efficient.
 */
 
+#ifndef _STDLIB_H_
 #include <stdlib.h>
+#endif
 
 typedef uint32_t COLA_hash_t;
 typedef void *COLA_data_t;
@@ -75,7 +77,7 @@ enum {
 	COLA_AssignOnlyReplace = 1 ,
 	/// COLA_assign will insert a new value but not replace an existing value
 	COLA_AssignNoReplace = 2 ,
-	/// COLA_assign will insert a new value or add to an existing value
+	/// COLA_assign will add to an existing value instead of replacing the value
 	COLA_AssignSum = 4 ,
 };
 
@@ -92,42 +94,42 @@ unsigned COLA_size_for_capacity(unsigned capacity);
 COLA COLA_allocate(unsigned capacity);
 
 /// COLA_deallocate structure regardless of contents
-void COLA_deallocate(COLA sca);
+void COLA_deallocate(COLA cola);
 
 /// COLA_initialize structure before use if not using COLA_allocate
-void COLA_initialize(COLA sca, unsigned capacity);
+void COLA_initialize(COLA cola, unsigned capacity);
 
 
 /// COLA_search get the data associoated with hash
-COLA_data_t COLA_search(COLA sca, COLA_hash_t hash);
+COLA_data_t COLA_search(COLA cola, COLA_hash_t hash);
 
 /// COLA_remove delete the association with hash and return the associated data
-COLA_data_t COLA_remove(COLA sca, COLA_hash_t hash);
+COLA_data_t COLA_remove(COLA cola, COLA_hash_t hash);
 
 /// COLA_assign create or modify an association between hash and value
-COLA_data_t COLA_assign(COLA sca, COLA_hash_t hash, COLA_data_t value, unsigned options, unsigned *outStatus);
+COLA_data_t COLA_assign(COLA cola, COLA_hash_t hash, COLA_data_t value, unsigned options, unsigned *outStatus);
 
 
 /// COLA_values provides all current associated hashes and values
-unsigned COLA_values(COLA sca, COLA_hash_t hashes[], COLA_data_t values[], unsigned capacity, unsigned reverse);
+unsigned COLA_values(COLA cola, COLA_hash_t hashes[], COLA_data_t values[], unsigned capacity, unsigned reverse);
 
 /// COLA_capacity maximum number of associations that can be assigned
-unsigned COLA_capacity(COLA sca);
+unsigned COLA_capacity(COLA cola);
 
 /// COLA_count approximate number of associations that are assigned
-unsigned COLA_count(COLA sca);
+unsigned COLA_count(COLA cola);
 
 /// COLA_is_empty returns true when there are no associations
-unsigned COLA_is_empty(COLA sca);
+unsigned COLA_is_empty(COLA cola);
 
 /// COLA_remove_all removes all associations and returns the number removed
-unsigned COLA_remove_all(COLA sca);
+unsigned COLA_remove_all(COLA cola);
 
 /// COLA_enumerator recieves each hash value association until returning a value other than zero
 typedef unsigned (*COLA_enumerator)(COLA_hash_t, COLA_data_t, void *);
 
 /// COLA_enumerate passes each hash value association to the enumerator and returns the first result other than zero
-unsigned COLA_enumerate(COLA sca, COLA_enumerator enumerator, void *context);
+unsigned COLA_enumerate(COLA cola, COLA_enumerator enumerator, void *context);
 
 
 #endif /* COL_SparseArray_h */
