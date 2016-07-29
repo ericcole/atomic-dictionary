@@ -28,7 +28,11 @@
 #define COLD_8_in_64_bits 72
 
 #ifndef COLD_DISPOSITION
+#if __LP64__
 #define COLD_DISPOSITION COLD_7_in_64_bits
+#else
+#define COLD_DISPOSITION COLD_4_in_32_bits
+#endif
 #endif
 
 #ifndef COLD_ORDER_BY_HASH
@@ -130,7 +134,7 @@ const COLD_casn_t COLD_divisor_at_depth[14] = {1,5,5*5,5*5*5,5*5*5*5,5*5*5*5*5,5
 #endif
 
 
-#pragma mark -
+#pragma mark - Atomic
 
 
 #define COLD_atomic_casp ECC_atomic_compare_and_swap_ptr
@@ -160,7 +164,7 @@ typedef int32_t COLD_math_t;
 #endif
 
 
-#pragma mark -
+#pragma mark - Nodes
 
 
 #define COLD_entry_limit (1<<COLD_bits_per_entry)
@@ -199,7 +203,7 @@ typedef int32_t COLD_math_t;
 #endif
 
 
-#pragma mark - COLD
+#pragma mark - Types
 
 
 typedef COLD_casn_t COLD_node_t;
@@ -211,24 +215,51 @@ typedef struct COLD_Bits {
 } COLD_bits_t;
 
 typedef struct COLD_Leaf {
+	/// link to next leaf in unused leaf pool
 	COLD_link_t link;
+	/// hash of key
 	COLD_hash_t hash;
+	/// reference count of leaf node
 	COLD_math_t references;
+#if __LP64__ && ((COLD_bits_per_node + COLD_bits_per_math + COLD_bits_per_hash) & 0x1F)
+	/// unused
 	COLD_math_t reserved;
+#endif
+	/// key used to test equality when hash matches
 	COLD_data_t key;
+	/// value associate with key
 	COLD_data_t value;
 } COLD_leaf_t;
 
+/*
+	it is typical to use pointers for key and value but there is no intrinsic
+	limit on the size of a leaf node.
+*/
+
 typedef struct COLD_Opaque {
+	/// branch nodes both in unused node pool and visible from root
 	COLD_node_t nodes[COLD_node_count];
+	/// bit field of branch nodes which have been released but not recycled
 	COLD_bits_t recycle;
+	/// callbacks to manage and compare keys
 	COLD_call_t keyCalls;
-	COLD_call_t valueCalls;
+	/// callbacks to manage values
+	COLD_hold_t valueCalls;
+	/// variable sized array of leaves in unused leaf pool and visible from root
 	COLD_leaf_t leaves[8];
 } COLD_root_t;
 
+/*
+	The leaf at position zero is the head of the unused leaf pool and is never
+	referenced by a branch node.  The properties of that leaf are special.
+	
+	leaves[0].link : first available leaf
+	leaves[0].hash : capacity and approximate leaf count
+	leaves[0].references : reference count of unrecycled branch nodes
+*/
 
-#pragma mark -
+
+#pragma mark - Logging
 
 
 #ifndef COLD_warning
@@ -259,8 +290,16 @@ void COLD_asserted(int value) {
 #endif
 #endif
 
+#ifndef COLD_KEY_FMT
+#define COLD_KEY_FMT "%p"
+#endif
 
-#pragma mark -
+#ifndef COLD_VALUE_FMT
+#define COLD_VALUE_FMT "%p"
+#endif
+
+
+#pragma mark - Initialization
 
 
 COLD_hash_t COLD_hash_key(COLD_data_t key);
@@ -283,31 +322,32 @@ unsigned COLD_size_for_capacity(unsigned capacity) {
 	return sizeof(COLD_root_t) + sizeof(COLD_leaf_t) * (capacity - 7);
 }
 
-COLD COLD_allocate(unsigned request, COLD_call_t const *keyCalls) {
+COLD COLD_allocate(unsigned request, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls) {
 	unsigned capacity = request < COLD_leaf_count ? request < 8 ? 7 : request : COLD_leaf_count;
 	unsigned size = COLD_size_for_capacity(capacity);
 	
 	COLD cold = malloc(size);
 	
 	if ( cold ) {
-		COLD_initialize(cold, capacity, keyCalls);
+		COLD_initialize(cold, capacity, keyCalls, valueCalls);
 	}
 	
 	return cold;
 }
 
 void COLD_deallocate(COLD cold) {
+	COLD_remove_all(cold);
 	free(cold);
 }
 
-void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls) {
+void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls) {
 	COLD_assert(elements >= 4 && elements <= COLD_leaf_count, "COLD_initialize %u", elements);
 	const COLD_leaf_t zeroLeaf = {0, 0, COLD_node_recycled};
 	const COLD_call_t zeroCall = {NULL};
 	unsigned i;
 	
 	cold->keyCalls = keyCalls ? *keyCalls : zeroCall;
-	cold->valueCalls = /*valueCalls ? *valueCalls : */zeroCall;
+	cold->valueCalls = valueCalls ? *valueCalls : zeroCall.hold;
 	
 	if ( cold->keyCalls.hash == NULL ) { cold->keyCalls.hash = COLD_hash_key; }
 	if ( cold->keyCalls.equal == NULL ) { cold->keyCalls.equal = COLD_equal_keys; }
@@ -331,7 +371,12 @@ void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls) 
 }
 
 
-#pragma mark -
+void COLD_release_value(COLD cold, COLD_data_t value) {
+	if ( cold->valueCalls.release ) { cold->valueCalls.release(value); }
+}
+
+
+#pragma mark - References
 
 
 void COLD_recycle_nodes(COLD cold, unsigned nodeIndices[], unsigned count);
@@ -401,7 +446,7 @@ void COLD_leave(COLD cold, COLD_math_t enter) {
 }
 
 
-#pragma mark -
+#pragma mark - Branches
 
 
 #define COLD_AcquireInterrupted COLD_entry_limit
@@ -488,7 +533,7 @@ void COLD_release_nodes(COLD cold, unsigned nodeIndices[], unsigned count) {
 }
 
 
-#pragma mark -
+#pragma mark - Leaves
 
 
 #define COLD_leaf_unassigned 0
@@ -534,7 +579,7 @@ void COLD_recycle_leaf(COLD cold, unsigned nodeIndex) {
 	leaf->key = NULL;
 	leaf->value = NULL;
 	
-	if ( cold->keyCalls.release ) { cold->keyCalls.release(key); }
+	if ( cold->keyCalls.hold.release ) { cold->keyCalls.hold.release(key); }
 	if ( cold->valueCalls.release ) { cold->valueCalls.release(value); }
 	
 	do {
@@ -573,7 +618,7 @@ unsigned COLD_reserve_leaf(COLD cold, unsigned nodeIndex) {
 }
 
 
-#pragma mark -
+#pragma mark - Tombs
 
 
 #define COLD_node_not_entombed COLD_node_index_root
@@ -617,10 +662,10 @@ unsigned COLD_reclaim_tomb(COLD cold, unsigned nodeIndex, COLD_node_t node, unsi
 }
 
 
-#pragma mark -
+#pragma mark - Search
 
 
-COLD_data_t COLD_search(COLD cold, COLD_data_t key) {
+unsigned COLD_search(COLD cold, COLD_data_t key, COLD_data_t *copyValueFound) {
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
 	COLD_hash_t hash = cold->keyCalls.hash(key);
@@ -628,6 +673,7 @@ COLD_data_t COLD_search(COLD cold, COLD_data_t key) {
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_node_t next, node;
 	
+	unsigned status = 0;
 	unsigned depth, order = 0, list = 0;
 	unsigned entry, entryIndex, index, tomb;
 	unsigned nodeIndex = COLD_node_index_root;
@@ -685,30 +731,49 @@ COLD_data_t COLD_search(COLD cold, COLD_data_t key) {
 		
 		if ( leaves[index].hash == hash && cold->keyCalls.equal(leaves[index].key, key) ) {
 			result = leaves[index].value;
-			list = 0;	//	break after release leaf
+			
+			if ( copyValueFound && cold->valueCalls.retain ) {
+				result = cold->valueCalls.retain(result);
+			}
+			
+			status = 1;
 		}
 		
 		COLD_release_leaf(cold, index);
 		
-		if ( !list ) { break; }
+		if ( status || !list ) { break; }
 	}
 	
 	COLD_leave(cold, enter);
+	
+	if ( copyValueFound ) {
+		*copyValueFound = result;
+	}
+	
+	return status;
+}
+
+
+COLD_data_t COLD_copy_value(COLD cold, COLD_data_t key) {
+	COLD_data_t result = NULL;
+	
+	COLD_search(cold, key, &result);
 	
 	return result;
 }
 
 
-#pragma mark -
+#pragma mark - Modify
 
 
-COLD_data_t COLD_remove(COLD cold, COLD_data_t key) {
+unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) {
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
 	COLD_hash_t hash = cold->keyCalls.hash(key);
 	COLD_node_t volatile *nodes = cold->nodes;
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_node_t next, node, changeNode;
+	unsigned status = 0;
 	unsigned depth, order = 0, list;
 	unsigned entry, entryIndex, index, tomb;
 	unsigned retry, count, ascend, nodeIndex;
@@ -785,7 +850,14 @@ COLD_data_t COLD_remove(COLD cold, COLD_data_t key) {
 					COLD_trace("COLD_remove %08X @%2u[%u] node[%02X] " COLD_NODE_FMT " ==> " COLD_NODE_FMT, hash, depth, entryIndex, nodeIndex, node, changeNode);
 					COLD_assert(!recycled, "COLD_remove %02X " COLD_NODE_FMT " ==> " COLD_NODE_FMT, nodeIndex, node, changeNode);
 					COLD_atomic_addh(&leaves[COLD_leaf_index_pool].hash, -1);
-					result = leaves[index].value;
+					
+					if ( copyValueRemoved ) {
+						result = leaves[index].value;
+						
+						if ( cold->valueCalls.retain ) { result = cold->valueCalls.retain(result); }
+					}
+					
+					status = 1;
 					COLD_dispose_leaf(cold, index);
 				} else {
 					retry = 1;
@@ -824,29 +896,20 @@ COLD_data_t COLD_remove(COLD cold, COLD_data_t key) {
 	
 	COLD_leave(cold, enter);
 	
-	return result;
+	if ( copyValueRemoved ) {
+		*copyValueRemoved = result;
+	}
+	
+	return status;
 }
 
-COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned options, unsigned *outStatus) {
+unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned options, COLD_data_t *copyValueReplaced) {
 	enum { Descend = 0, Insert = 1, Replace = 2, Convert = 3, Append = 4 };
 	
 	struct Rollback {
 		COLD_node_t node;
 		unsigned nodeIndex, entryIndex;
 	};
-	
-	/*
-		empty entry in branch - insert
-		branch in branch - descend
-		unequal hash in branch - convert to branch
-		equal hash equal key in branch - replace
-		equal hash unequal key in branch - convert to list
-		empty entry in list - record for insertion if no match
-		branch in list - descend
-		unequal key in list - continue
-		equal key in list - replace
-		end of list - append or insert if empty entry recorded
-	*/
 	
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
@@ -983,22 +1046,20 @@ COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned 
 				result = leaves[index].value;
 				
 				if ( options & COLD_AssignSum ) {
-					result = COLD_atomic_addp(&leaves[index].value, value);
+					result = COLD_atomic_addp(&leaves[index].value, value); break;
 				} else if ( options & COLD_AssignNoReplace ) {
-					status = COLD_AssignExistingEntry;
+					status = COLD_AssignExistingEntry; break;
 				} else if ( result == value ) {
 					break;
+				} else if ( cold->valueCalls.retain != NULL || cold->valueCalls.release != NULL ) {
+					//	replace entire leaf
 				} else if ( COLD_atomic_casp(&leaves[index].value, (void *)result, (void *)value) ) {
 					COLD_trace("COLD_assign %08X @%2u[%u] leaf[%2u] %p ==> %p", hash, depth, entryIndex, index, result, value);
-					//	own value
+					break;
 				} else {
 					retry = 1; break;
 				}
-				
-				break;
-			}
-			
-			if ( options & COLD_AssignOnlyReplace ) {
+			} else if ( options & COLD_AssignOnlyReplace ) {
 				status = COLD_AssignMissingEntry;
 				break;
 			}
@@ -1012,12 +1073,14 @@ COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned 
 				else if ( COLD_AcquireFailed == assignLeaf ) { status = COLD_AssignNoLeaves; break; }
 				else { disposeLeaf = assignLeaf; }
 				
-				leaves[assignLeaf].key = cold->keyCalls.retain ? cold->keyCalls.retain(key) : key;
+				COLD_data_t useKey = ( Replace == action ) ? leaves[index].key : key;
+				
+				leaves[assignLeaf].key = cold->keyCalls.hold.retain ? cold->keyCalls.hold.retain(useKey) : useKey;
 				leaves[assignLeaf].hash = hash;
-				leaves[assignLeaf].value = value;
+				leaves[assignLeaf].value = cold->valueCalls.retain ? cold->valueCalls.retain(value) : value;
 			}
 			
-			if ( Insert == action ) {
+			if ( Insert == action || Replace == action ) {
 				changeNode = COLD_node_with_entry_at_index(node, COLD_leaf_index_entry(assignLeaf), entryIndex);
 			} else if ( Append == action ) {
 				unsigned acquired;
@@ -1082,7 +1145,6 @@ COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned 
 				COLD_atomic_addh(&leaves[COLD_leaf_index_pool].hash, 1);
 				COLD_trace("COLD_insert %08X @%2u[%u] node[%02X] " COLD_NODE_FMT " ==> " COLD_NODE_FMT " leaf[%2u] %p", hash, depth, entryIndex, nodeIndex, node, changeNode, assignLeaf, value);
 				COLD_assert(!recycled, "COLD_assign %02X " COLD_NODE_FMT " ==> " COLD_NODE_FMT, nodeIndex, node, changeNode);
-				//	own value
 				disposeLeaf = 0;
 			} else {
 				retry = 1;
@@ -1091,6 +1153,7 @@ COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned 
 			break;
 		}
 		
+		if ( Replace == action && copyValueReplaced && !retry && cold->valueCalls.retain ) { result = cold->valueCalls.retain(result); }
 		if ( releaseIndex ) { COLD_release_leaf(cold, releaseIndex); }
 	} while ( retry );
 	
@@ -1105,15 +1168,15 @@ COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned 
 	
 	COLD_leave(cold, enter);
 	
-	if ( outStatus ) {
-		*outStatus = status;
+	if ( copyValueReplaced ) {
+		*copyValueReplaced = result;
 	}
 	
-	return result;
+	return status;
 }
 
 
-#pragma mark -
+#pragma mark - Query
 
 
 unsigned COLD_capacity(COLD cold) {
@@ -1157,7 +1220,7 @@ unsigned COLD_remove_all(COLD cold) {
 	for ( index = 1 ; index <= capacity && !result ; ++index ) {
 		if ( !COLD_reserve_leaf(cold, index) ) { continue; }
 		
-		COLD_remove(cold, leaves[index].key);
+		COLD_remove(cold, leaves[index].key, NULL);
 		COLD_release_leaf(cold, index);
 		result += 1;
 	}
@@ -1166,7 +1229,7 @@ unsigned COLD_remove_all(COLD cold) {
 }
 
 
-#pragma mark -
+#pragma mark - Verify
 
 
 unsigned COLD_verify_recurse(COLD cold, unsigned nodeIndex, uint32_t seen[]) {
@@ -1252,28 +1315,49 @@ unsigned COLD_verify(COLD cold) {
 }
 
 
-#pragma mark -
+#pragma mark - Print
 
 
-unsigned COLD_print_at_depth(COLD cold, unsigned nodeIndex, unsigned depth, unsigned level, unsigned inset) {
+void COLD_printer_default(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value) {
+	switch ( action ) {
+	case COLD_print_begin_______count_capacity_x_cold:
+		printf("---------- %p [%u of %u] ----------\n", value, entry, hash); break;
+	
+	case COLD_print_enter_node__entry_bucket_x_x:
+		printf(" " COLD_ENTRY_FMT "%s", (COLD_node_t)entry, hash ? ";" : ":"); break;
+	case COLD_print_branch______entry_order_x_x:
+		printf("%s" COLD_ENTRY_FMT "", hash > 0 ? " " : "[", (COLD_node_t)entry); break;
+	case COLD_print_leave_node__entry_x_x_x:
+		printf("]"); break;
+	
+	case COLD_print_leaf________entry_hash_key_value:
+		printf(" " COLD_ENTRY_FMT ":[%08X %p:%p]", (COLD_node_t)entry, hash, key, value); break;
+	
+	case COLD_print_enter_line__level_x_x_x:
+		printf("%3u|", entry); break;
+	case COLD_print_leave_line__level_x_x_x:
+		printf("\n"); break;
+	}
+}
+
+unsigned COLD_print_recurse(COLD cold, unsigned nodeIndex, unsigned depth, unsigned level, COLD_printer printer, void *context) {
 	unsigned result = 0;
 	COLD_node_t node = cold->nodes[nodeIndex];
 	
-	if ( 0 == level ) { printf("---------- %p [%u of %u] ----------\n", cold, COLD_count(cold), COLD_capacity(cold)); }
-	if ( 0 == depth ) { printf("%3u|", level); }
-	if ( 0 == depth && inset > 0 ) { printf("%*s", inset, ""); }
-	if ( level == depth ) { printf(" " COLD_ENTRY_FMT "%s", (COLD_node_t)nodeIndex, COLD_node_is_list(node) ? ";" : ":"); }
+	if ( 0 == level ) { printer(context, COLD_print_begin_______count_capacity_x_cold, COLD_count(cold), COLD_capacity(cold), NULL, cold); }
+	if ( 0 == depth ) { printer(context, COLD_print_enter_line__level_x_x_x, level, 0, NULL, NULL); }
+	if ( level == depth ) { printer(context, COLD_print_enter_node__entry_bucket_x_x, nodeIndex, COLD_node_is_list(node), NULL, NULL); }
 	
 	for ( unsigned order = 0 ; order < COLD_entries_per_node ; ++order ) {
 		unsigned entry = COLD_entry_for_index(node, order);
 		
-		if ( level == depth ) { printf("%s" COLD_ENTRY_FMT "", order > 0 ? " " : "[", (COLD_node_t)entry); }
+		if ( level == depth ) { printer(context, COLD_print_branch______entry_order_x_x, entry, order, NULL, NULL); }
 		
 		if ( COLD_entry_is_null(entry) ) {
 			continue;
 		} else if ( COLD_entry_is_node(entry) ) {
 			if ( depth < level ) {
-				result += COLD_print_at_depth(cold, entry, depth + 1, level, inset);
+				result += COLD_print_recurse(cold, entry, depth + 1, level, printer, context);
 			} else if ( depth == level && entry != COLD_node_index_root ) {
 				result += 1;
 			}
@@ -1281,27 +1365,32 @@ unsigned COLD_print_at_depth(COLD cold, unsigned nodeIndex, unsigned depth, unsi
 			if ( depth + 1 == level ) {
 				COLD_leaf_t *leaf = cold->leaves + COLD_entry_leaf_index(entry);
 				
-				printf(" " COLD_ENTRY_FMT ":[%08X %p:%p]", (COLD_node_t)entry, leaf->hash, leaf->key, leaf->value);
+				printer(context, COLD_print_leaf________entry_hash_key_value, entry, leaf->hash, leaf->key, leaf->value);
 			} else if ( depth == level ) {
 				result += 1;
 			}
 		}
  	}
 	
-	if ( level == depth ) { printf("]"); }
-	if ( 0 == depth ) { printf("\n"); }
+	if ( level == depth ) { printer(context, COLD_print_leave_node__entry_x_x_x, nodeIndex, 0, NULL, NULL); }
+	if ( 0 == depth ) { printer(context, COLD_print_leave_line__level_x_x_x, level, 0, NULL, NULL); }
 	
 	return result;
 }
 
-void COLD_print(COLD cold) {
+void COLD_print(COLD cold, COLD_printer printer, void *context) {
 	unsigned level = 0;
 	
-	while ( COLD_print_at_depth(cold, COLD_node_index_root, 0, level++, 0) && level < COLD_maximum_depth * 2 ) {}
+	if ( NULL == printer ) {
+		printer = COLD_printer_default;
+	}
+	
+	//	recursively iterate to depth for each depth
+	while ( COLD_print_recurse(cold, COLD_node_index_root, 0, level++, printer, context) && level < COLD_maximum_depth * 2 ) {}
 }
 
 
-#pragma mark -
+#pragma mark - Hash
 
 
 COLD_hash_t COLD_hash_key(COLD_data_t key) {
@@ -1354,4 +1443,15 @@ COLD_hash_t COLD_hash_bytes_null_terminated(COLD_data_t key) {
 	}
 	
 	return result ^ ((i - 1) * COLD_hash_prime);
+}
+
+unsigned COLD_hash_enumerator(COLD_data_t key, COLD_data_t value, void *context, COLD_hash_t hash) {
+	*(COLD_hash_t *)context ^= hash;
+	return 0;
+}
+
+COLD_hash_t COLD_hash(COLD cold) {
+	COLD_hash_t result = COLD_count(cold) * COLD_hash_prime;
+	COLD_enumerate(cold, COLD_hash_enumerator, &result);
+	return result;
 }

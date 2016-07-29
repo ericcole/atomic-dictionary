@@ -17,16 +17,38 @@ typedef uint32_t COLD_hash_t;
 typedef void const *COLD_data_t;
 typedef struct COLD_Opaque *COLD;
 
+typedef struct COLD_ValueCallbacks {
+	/// retain or make immutable copy of value
+	COLD_data_t (*retain)(COLD_data_t);
+	/// release or free value
+	void (*release)(COLD_data_t);
+} COLD_hold_t;
+
 typedef struct COLD_KeyCallbacks {
+	struct COLD_ValueCallbacks hold;
 	/// hash contents of key
 	COLD_hash_t (*hash)(COLD_data_t);
 	/// compare two keys to see if they are equal
 	unsigned (*equal)(COLD_data_t, COLD_data_t);
-	/// retain or make immutable copy of key
-	COLD_data_t (*retain)(COLD_data_t);
-	/// release or free key
-	void (*release)(COLD_data_t);
 } COLD_call_t;
+
+/*
+	Callbacks must be able to handle any value that may be passed
+	to assign, remove or search.  If NULL may be passed then the
+	callbacks must handle NULL.
+	
+	When retain and release callbacks are provided then all keys
+	and values will be held while an association exists and may
+	be held for a short time before or after an association exists.
+	
+	When a retain callback is provided for values
+		all assigned values are retained
+		all removed values are released
+		all results from search, remove and assign are retained
+		keys are retained and released when values are replaced
+	
+	Using the COLD_AssignSum option with value callbacks is undefined
+*/
 
 
 enum {
@@ -64,23 +86,29 @@ unsigned COLD_maximum_capacity();
 unsigned COLD_size_for_capacity(unsigned capacity);
 
 /// COLD_allocate and initialize new structure
-COLD COLD_allocate(unsigned capacity, COLD_call_t const *keyCalls);
+COLD COLD_allocate(unsigned capacity, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls);
 
 /// COLD_deallocate structure regardless of contents
 void COLD_deallocate(COLD cold);
 
 /// COLD_initialize structure before use if not using COLD_allocate
-void COLD_initialize(COLD cold, unsigned capacity, COLD_call_t const *keyCalls);
+void COLD_initialize(COLD cold, unsigned capacity, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls);
 
 
-/// COLD_search get the data associoated with hash
-COLD_data_t COLD_search(COLD cold, COLD_data_t key);
+/// COLD_search return true if an association with key exists and optionally copy the associated value
+unsigned COLD_search(COLD cold, COLD_data_t key, COLD_data_t *copyValueFound);
 
-/// COLD_remove delete the association with hash and return the associated data
-COLD_data_t COLD_remove(COLD cold, COLD_data_t key);
+/// COLD_remove return true if an association with key was removed and optionally copy the associated value
+unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved);
 
-/// COLD_assign create or modify an association between hash and value
-COLD_data_t COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned options, unsigned *outStatus);
+/// COLD_assign return the status of inserting or replacing an association and optionally copy the replaced value
+unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned options, COLD_data_t *copyValueReplaced);
+
+/// COLD_copy_value is COLD_search that returns the copy of value
+COLD_data_t COLD_copy_value(COLD cold, COLD_data_t key);
+
+/// COLD_release_value will balance the retain from a search, remove or assign copy of value
+void COLD_release_value(COLD cold, COLD_data_t value);
 
 
 /// COLD_capacity maximum number of associations that can be assigned
@@ -107,5 +135,22 @@ COLD_hash_t COLD_hash_bytes(COLD_data_t key, unsigned length);
 
 /// COLD_hash_bytes quickly hashes data with length up to the first null byte
 COLD_hash_t COLD_hash_bytes_null_terminated(COLD_data_t key);
+
+
+enum {
+	COLD_print_begin_______count_capacity_x_cold = 0,
+	COLD_print_enter_node__entry_bucket_x_x = 1,
+	COLD_print_branch______entry_order_x_x = 2,
+	COLD_print_leave_node__entry_x_x_x = 3,
+	COLD_print_leaf________entry_hash_key_value = 4,
+	COLD_print_enter_line__level_x_x_x = 7,
+	COLD_print_leave_line__level_x_x_x = 8,
+};
+
+typedef void (*COLD_printer)(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value);
+void COLD_printer_default(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value);
+
+/// COLD_print structure to console for development
+void COLD_print(COLD cold, COLD_printer printer, void *context);
 
 #endif /* COL_Dictionary_h */
