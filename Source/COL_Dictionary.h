@@ -137,20 +137,7 @@ COLD_hash_t COLD_hash_bytes(COLD_data_t key, unsigned length);
 COLD_hash_t COLD_hash_bytes_null_terminated(COLD_data_t key);
 
 
-enum {
-	COLD_print_begin_______count_capacity_x_cold = 0,
-	COLD_print_enter_node__entry_bucket_x_x = 1,
-	COLD_print_branch______entry_order_x_x = 2,
-	COLD_print_leave_node__entry_x_x_x = 3,
-	COLD_print_leaf________entry_hash_key_value = 4,
-	COLD_print_enter_line__level_x_x_x = 7,
-	COLD_print_leave_line__level_x_x_x = 8,
-};
-
-typedef void (*COLD_printer)(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value);
-void COLD_printer_default(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value);
-
-/// COLD_print structure to console for development
-void COLD_print(COLD cold, COLD_printer printer, void *context);
+/// COLD_print internal structure
+void COLD_print(COLD cold, char const *format_key_value_hash);
 
 #endif /* COL_Dictionary_h */

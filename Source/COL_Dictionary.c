@@ -290,14 +290,6 @@ void COLD_asserted(int value) {
 #endif
 #endif
 
-#ifndef COLD_KEY_FMT
-#define COLD_KEY_FMT "%p"
-#endif
-
-#ifndef COLD_VALUE_FMT
-#define COLD_VALUE_FMT "%p"
-#endif
-
 
 #pragma mark - Initialization
 
@@ -1318,46 +1310,24 @@ unsigned COLD_verify(COLD cold) {
 #pragma mark - Print
 
 
-void COLD_printer_default(void *context, unsigned action, unsigned entry, COLD_hash_t hash, COLD_data_t key, COLD_data_t value) {
-	switch ( action ) {
-	case COLD_print_begin_______count_capacity_x_cold:
-		printf("---------- %p [%u of %u] ----------\n", value, entry, hash); break;
-	
-	case COLD_print_enter_node__entry_bucket_x_x:
-		printf(" " COLD_ENTRY_FMT "%s", (COLD_node_t)entry, hash ? ";" : ":"); break;
-	case COLD_print_branch______entry_order_x_x:
-		printf("%s" COLD_ENTRY_FMT "", hash > 0 ? " " : "[", (COLD_node_t)entry); break;
-	case COLD_print_leave_node__entry_x_x_x:
-		printf("]"); break;
-	
-	case COLD_print_leaf________entry_hash_key_value:
-		printf(" " COLD_ENTRY_FMT ":[%08X %p:%p]", (COLD_node_t)entry, hash, key, value); break;
-	
-	case COLD_print_enter_line__level_x_x_x:
-		printf("%3u|", entry); break;
-	case COLD_print_leave_line__level_x_x_x:
-		printf("\n"); break;
-	}
-}
-
-unsigned COLD_print_recurse(COLD cold, unsigned nodeIndex, unsigned depth, unsigned level, COLD_printer printer, void *context) {
+unsigned COLD_print_recurse(COLD cold, unsigned nodeIndex, unsigned depth, unsigned level, char const *format_key_value_hash) {
 	unsigned result = 0;
 	COLD_node_t node = cold->nodes[nodeIndex];
 	
-	if ( 0 == level ) { printer(context, COLD_print_begin_______count_capacity_x_cold, COLD_count(cold), COLD_capacity(cold), NULL, cold); }
-	if ( 0 == depth ) { printer(context, COLD_print_enter_line__level_x_x_x, level, 0, NULL, NULL); }
-	if ( level == depth ) { printer(context, COLD_print_enter_node__entry_bucket_x_x, nodeIndex, COLD_node_is_list(node), NULL, NULL); }
+	if ( 0 == level ) { printf("---------- %p [%u of %u] ----------\n", cold, COLD_count(cold), COLD_capacity(cold)); }
+	if ( 0 == depth ) { printf("%3u|", level); }
+	if ( level == depth ) { printf(" " COLD_ENTRY_FMT "%s", (COLD_node_t)nodeIndex, COLD_node_is_list(node) ? ";" : ":"); }
 	
 	for ( unsigned order = 0 ; order < COLD_entries_per_node ; ++order ) {
 		unsigned entry = COLD_entry_for_index(node, order);
 		
-		if ( level == depth ) { printer(context, COLD_print_branch______entry_order_x_x, entry, order, NULL, NULL); }
+		if ( level == depth ) { printf("%s" COLD_ENTRY_FMT "", order > 0 ? " " : "[", (COLD_node_t)entry); }
 		
 		if ( COLD_entry_is_null(entry) ) {
 			continue;
 		} else if ( COLD_entry_is_node(entry) ) {
 			if ( depth < level ) {
-				result += COLD_print_recurse(cold, entry, depth + 1, level, printer, context);
+				result += COLD_print_recurse(cold, entry, depth + 1, level, format_key_value_hash);
 			} else if ( depth == level && entry != COLD_node_index_root ) {
 				result += 1;
 			}
@@ -1365,28 +1335,29 @@ unsigned COLD_print_recurse(COLD cold, unsigned nodeIndex, unsigned depth, unsig
 			if ( depth + 1 == level ) {
 				COLD_leaf_t *leaf = cold->leaves + COLD_entry_leaf_index(entry);
 				
-				printer(context, COLD_print_leaf________entry_hash_key_value, entry, leaf->hash, leaf->key, leaf->value);
+				if ( NULL == format_key_value_hash || 0 == *format_key_value_hash ) {
+					printf(" " COLD_ENTRY_FMT ":[%08X %p:%p]", (COLD_node_t)entry, leaf->hash, leaf->key, leaf->value);
+				} else {
+					printf(" " COLD_ENTRY_FMT ":", (COLD_node_t)entry);
+					printf(format_key_value_hash, leaf->key, leaf->value, leaf->hash);
+				}
 			} else if ( depth == level ) {
 				result += 1;
 			}
 		}
  	}
 	
-	if ( level == depth ) { printer(context, COLD_print_leave_node__entry_x_x_x, nodeIndex, 0, NULL, NULL); }
-	if ( 0 == depth ) { printer(context, COLD_print_leave_line__level_x_x_x, level, 0, NULL, NULL); }
+	if ( level == depth ) { printf("]"); }
+	if ( 0 == depth ) { printf("\n"); }
 	
 	return result;
 }
 
-void COLD_print(COLD cold, COLD_printer printer, void *context) {
+void COLD_print(COLD cold, char const *format_key_value_hash) {
 	unsigned level = 0;
 	
-	if ( NULL == printer ) {
-		printer = COLD_printer_default;
-	}
-	
 	//	recursively iterate to depth for each depth
-	while ( COLD_print_recurse(cold, COLD_node_index_root, 0, level++, printer, context) && level < COLD_maximum_depth * 2 ) {}
+	while ( COLD_print_recurse(cold, COLD_node_index_root, 0, level++, format_key_value_hash) && level < COLD_maximum_depth * 2 ) {}
 }
 
 
