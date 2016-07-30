@@ -341,7 +341,7 @@ void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, 
 	cold->keyCalls = keyCalls ? *keyCalls : zeroCall;
 	cold->valueCalls = valueCalls ? *valueCalls : zeroCall.hold;
 	
-	if ( cold->keyCalls.hash == NULL ) { cold->keyCalls.hash = COLD_hash_key; }
+	if ( cold->keyCalls.hash == NULL || cold->keyCalls.equal == NULL ) { cold->keyCalls.hash = COLD_hash_key; }
 	if ( cold->keyCalls.equal == NULL ) { cold->keyCalls.equal = COLD_equal_keys; }
 	
 	for ( i = 0 ; i < COLD_node_index_last ; ++i ) {
@@ -1171,19 +1171,19 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 #pragma mark - Query
 
 
-unsigned COLD_capacity(COLD cold) {
+unsigned COLD_capacity(COLD const cold) {
 	return cold->leaves[COLD_leaf_index_pool].hash >> (COLD_bits_per_hash/2);
 }
 
-unsigned COLD_count(COLD cold) {
+unsigned COLD_count(COLD const cold) {
 	return cold->leaves[COLD_leaf_index_pool].hash & ((1 << (COLD_bits_per_hash/2)) - 1);
 }
 
-unsigned COLD_is_empty(COLD cold) {
+unsigned COLD_is_empty(COLD const cold) {
 	return (cold->leaves[COLD_leaf_index_pool].hash & ((1 << (COLD_bits_per_hash/2)) - 1)) == 0;
 }
 
-unsigned COLD_enumerate(COLD cold, COLD_enumerator enumerator, void *context) {
+unsigned COLD_enumerate(COLD const cold, COLD_enumerator enumerator, void *context) {
 	unsigned result = 0;
 	unsigned index, capacity = COLD_capacity(cold);
 	COLD_leaf_t volatile *leaves = cold->leaves;
@@ -1224,7 +1224,7 @@ unsigned COLD_remove_all(COLD cold) {
 #pragma mark - Verify
 
 
-unsigned COLD_verify_recurse(COLD cold, unsigned nodeIndex, uint32_t seen[]) {
+unsigned COLD_verify_recurse(COLD const cold, unsigned nodeIndex, uint32_t seen[]) {
 	unsigned result = 1;
 	COLD_node_t node = cold->nodes[nodeIndex];
 	unsigned list = COLD_node_is_list(node);
@@ -1242,7 +1242,7 @@ unsigned COLD_verify_recurse(COLD cold, unsigned nodeIndex, uint32_t seen[]) {
 	return result;
 }
 
-unsigned COLD_verify(COLD cold) {
+unsigned COLD_verify(COLD const cold) {
 	unsigned unverified = 0;
 	unsigned used_leaves = 0;
 	unsigned capacity = COLD_capacity(cold);

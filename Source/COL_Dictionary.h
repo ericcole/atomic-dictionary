@@ -37,6 +37,11 @@ typedef struct COLD_KeyCallbacks {
 	to assign, remove or search.  If NULL may be passed then the
 	callbacks must handle NULL.
 	
+	Keys must be immutable with respect to the hash callback.  If
+	the key changes such that it would generate a different hash it
+	will equal nothing.  The hash is only calculated when the key is
+	assigned.
+	
 	When retain and release callbacks are provided then all keys
 	and values will be held while an association exists and may
 	be held for a short time before or after an association exists.
@@ -46,6 +51,9 @@ typedef struct COLD_KeyCallbacks {
 		all removed values are released
 		all results from search, remove and assign are retained
 		keys are retained and released when values are replaced
+	
+	If there is no equality callback then the hash callback will not
+	be used.
 	
 	Using the COLD_AssignSum option with value callbacks is undefined
 */
@@ -108,17 +116,17 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 COLD_data_t COLD_copy_value(COLD cold, COLD_data_t key);
 
 /// COLD_release_value will balance the retain from a search, remove or assign copy of value
-void COLD_release_value(COLD cold, COLD_data_t value);
+void COLD_release_value(COLD const cold, COLD_data_t value);
 
 
 /// COLD_capacity maximum number of associations that can be assigned
-unsigned COLD_capacity(COLD cold);
+unsigned COLD_capacity(COLD const cold);
 
 /// COLD_count approximate number of associations that are assigned
-unsigned COLD_count(COLD cold);
+unsigned COLD_count(COLD const cold);
 
 /// COLD_is_empty returns true when there are no associations
-unsigned COLD_is_empty(COLD cold);
+unsigned COLD_is_empty(COLD const cold);
 
 /// COLD_remove_all removes all associations and returns the number removed
 unsigned COLD_remove_all(COLD cold);
