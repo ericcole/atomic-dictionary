@@ -314,6 +314,10 @@ unsigned COLD_size_for_capacity(unsigned capacity) {
 	return sizeof(COLD_root_t) + sizeof(COLD_leaf_t) * (capacity - 7);
 }
 
+unsigned COLD_capacity_for_size(unsigned size) {
+	return (size - sizeof(COLD_root_t)) / sizeof(COLD_leaf_t) + 7;
+}
+
 COLD COLD_allocate(unsigned request, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls) {
 	unsigned capacity = request < COLD_leaf_count ? request < 8 ? 7 : request : COLD_leaf_count;
 	unsigned size = COLD_size_for_capacity(capacity);

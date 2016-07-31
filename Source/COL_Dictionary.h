@@ -17,19 +17,24 @@ typedef uint32_t COLD_hash_t;
 typedef void const *COLD_data_t;
 typedef struct COLD_Opaque *COLD;
 
+///	return zero if the two values are not equal
+typedef unsigned (*COLD_equal_function)(COLD_data_t, COLD_data_t);
+///	return the hash of the given value
+typedef COLD_hash_t (*COLD_hash_function)(COLD_data_t);
+///	return an immutable copy of value or retain value
+typedef COLD_data_t (*COLD_retain_function)(COLD_data_t);
+///	release or free value
+typedef void (*COLD_release_function)(COLD_data_t);
+
 typedef struct COLD_ValueCallbacks {
-	/// retain or make immutable copy of value
-	COLD_data_t (*retain)(COLD_data_t);
-	/// release or free value
-	void (*release)(COLD_data_t);
+	COLD_retain_function retain;
+	COLD_release_function release;
 } COLD_hold_t;
 
 typedef struct COLD_KeyCallbacks {
 	struct COLD_ValueCallbacks hold;
-	/// hash contents of key
-	COLD_hash_t (*hash)(COLD_data_t);
-	/// compare two keys to see if they are equal
-	unsigned (*equal)(COLD_data_t, COLD_data_t);
+	COLD_hash_function hash;
+	COLD_equal_function equal;
 } COLD_call_t;
 
 /*
@@ -53,7 +58,9 @@ typedef struct COLD_KeyCallbacks {
 		keys are retained and released when values are replaced
 	
 	If there is no equality callback then the hash callback will not
-	be used.
+	be used.  The hashes of two equal values must be equal.  When the
+	hashes of two unequal values are equal it causes a hash collision
+	and degrades performance.
 	
 	Using the COLD_AssignSum option with value callbacks is undefined
 */
@@ -90,8 +97,9 @@ unsigned COLD_attributes();
 /// COLD_maximum_capacity that can be allocated or initialized
 unsigned COLD_maximum_capacity();
 
-/// COLD_size_for_elements returns the number of bytes needed to store elements
+/// COLD_size_for_capacity returns the number of bytes needed to store elements
 unsigned COLD_size_for_capacity(unsigned capacity);
+unsigned COLD_capacity_for_size(unsigned size);
 
 /// COLD_allocate and initialize new structure
 COLD COLD_allocate(unsigned capacity, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls);
@@ -131,10 +139,10 @@ unsigned COLD_is_empty(COLD const cold);
 /// COLD_remove_all removes all associations and returns the number removed
 unsigned COLD_remove_all(COLD cold);
 
-/// COLD_enumerator recieves each hash value association until returning a value other than zero
+/// COLD_enumerator recieves each key value association until returning a value other than zero
 typedef unsigned (*COLD_enumerator)(COLD_data_t key, COLD_data_t value, void *context, COLD_hash_t hash);
 
-/// COLD_enumerate passes each hash value association to the enumerator and returns the first result other than zero
+/// COLD_enumerate passes each key value association to the enumerator and returns the first result other than zero
 unsigned COLD_enumerate(COLD cold, COLD_enumerator enumerator, void *context);
 
 
