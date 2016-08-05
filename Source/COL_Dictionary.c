@@ -141,9 +141,11 @@ const COLD_casn_t COLD_divisor_at_depth[14] = {1,5,5*5,5*5*5,5*5*5*5,5*5*5*5*5,5
 #define COLD_atomic_addp ECC_atomic_add_ptr
 
 #if 1
-typedef uint32_t COLD_hash_t;
+typedef uint32_t COLD_link_t;
 #define COLD_bits_per_hash 32
-#define COLD_atomic_addh ECC_atomic_add_32
+#define COLD_bits_per_link 32
+#define COLD_atomic_casl ECC_atomic_compare_and_swap_32
+#define COLD_LINK_FMT "%08X"
 #endif
 
 #if 1
@@ -207,7 +209,6 @@ typedef int32_t COLD_math_t;
 
 
 typedef COLD_casn_t COLD_node_t;
-typedef COLD_casn_t COLD_link_t;
 typedef void const *COLD_data_t;
 
 typedef struct COLD_Bits {
@@ -215,19 +216,13 @@ typedef struct COLD_Bits {
 } COLD_bits_t;
 
 typedef struct COLD_Leaf {
-	/// link to next leaf in unused leaf pool
-	COLD_link_t link;
-	/// hash of key
-	COLD_hash_t hash;
 	/// reference count of leaf node
 	COLD_math_t references;
-#if __LP64__ && ((COLD_bits_per_node + COLD_bits_per_math + COLD_bits_per_hash) & 0x1F)
-	/// unused
-	COLD_math_t reserved;
-#endif
+	/// link to next leaf in unused leaf pool or hash when leaf acquired
+	union { COLD_link_t link; COLD_hash_t hash; };
 	/// key used to test equality when hash matches
 	COLD_data_t key;
-	/// value associate with key
+	/// value associated with key
 	COLD_data_t value;
 } COLD_leaf_t;
 
@@ -237,6 +232,7 @@ typedef struct COLD_Leaf {
 */
 
 typedef struct COLD_Opaque {
+	COLD_math_t capacity, count;
 	/// branch nodes both in unused node pool and visible from root
 	COLD_node_t nodes[COLD_node_count];
 	/// bit field of branch nodes which have been released but not recycled
@@ -344,10 +340,14 @@ void COLD_deallocate(COLD cold) {
 
 void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, COLD_hold_t const *valueCalls) {
 	COLD_assert(elements >= 4 && elements <= COLD_leaf_count, "COLD_initialize %u", elements);
-	const COLD_leaf_t zeroLeaf = {0, 0, COLD_node_recycled};
+	const COLD_leaf_t zeroLeaf = {COLD_node_recycled};
 	const COLD_call_t zeroCall = {NULL};
 	unsigned i;
 	
+	if ( elements > COLD_leaf_count ) { elements = COLD_leaf_count; }
+	
+	cold->count = 0;
+	cold->capacity = elements;
 	cold->keyCalls = keyCalls ? *keyCalls : zeroCall;
 	cold->valueCalls = valueCalls ? *valueCalls : *(COLD_hold_t *)&zeroCall;
 	
@@ -367,11 +367,8 @@ void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, 
 	}
 	
 	cold->leaves[0].references = 0;
-	cold->leaves[0].hash = elements << (COLD_bits_per_hash/2);
-	cold->leaves[0].value = NULL;
 	cold->leaves[elements].link = 0;
 }
-
 
 void COLD_release_value(COLD cold, COLD_data_t value) {
 	if ( cold->valueCalls.release ) { COLD_call_release(cold->valueCalls, value); }
@@ -538,9 +535,6 @@ void COLD_release_nodes(COLD cold, unsigned nodeIndices[], unsigned count) {
 #pragma mark - Leaves
 
 
-#define COLD_leaf_unassigned 0
-#define COLD_leaf_assigned COLD_entry_limit
-
 unsigned COLD_acquire_leaf(COLD cold) {
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_link_t volatile *pool = &leaves[COLD_leaf_index_pool].link;
@@ -548,17 +542,17 @@ unsigned COLD_acquire_leaf(COLD cold) {
 	
 	head = *pool;
 	link = head & COLD_entry_mask;
-	if ( !link ) { COLD_warning("COLD_acquire_leaf pool depleted " COLD_NODE_FMT, head); return COLD_AcquireFailed; }
-	COLD_assert(link <= COLD_leaf_count, "COLD_acquire_leaf head " COLD_NODE_FMT, head);
+	if ( !link ) { COLD_warning("COLD_acquire_leaf pool depleted " COLD_LINK_FMT, head); return COLD_AcquireFailed; }
+	COLD_assert(link <= COLD_leaf_count, "COLD_acquire_leaf head " COLD_LINK_FMT, head);
 	
 	salt = head & ~COLD_entry_mask;
 	peek = leaves[link].link;
 	next = peek & COLD_entry_mask;
-	COLD_assert(link != next, "COLD_acquire_leaf " COLD_ENTRY_FMT " next " COLD_NODE_FMT, link, peek);
-	if ( !COLD_atomic_casn(pool, head, next + salt + COLD_entry_limit) ) { return COLD_AcquireInterrupted; }
-	COLD_assert(next <= COLD_leaf_count, "COLD_acquire_leaf next " COLD_NODE_FMT, peek);
+	COLD_assert(link != next, "COLD_acquire_leaf " COLD_LINK_FMT " next " COLD_LINK_FMT, link, peek);
+	if ( !COLD_atomic_casl(pool, head, next + salt + COLD_entry_limit) ) { return COLD_AcquireInterrupted; }
+	COLD_assert(next <= COLD_leaf_count, "COLD_acquire_leaf next " COLD_LINK_FMT, peek);
 	
-	leaves[link].link = COLD_leaf_unassigned;
+	leaves[link].link = 0;
 	COLD_atomic_addm(&leaves[link].references, COLD_node_acquired - COLD_node_recycled + COLD_node_detached);
 	
 	return (unsigned)link;
@@ -577,7 +571,6 @@ void COLD_recycle_leaf(COLD cold, unsigned nodeIndex) {
 	value = leaf->value;
 	
 	leaf->link = 0;
-	leaf->hash = 0;
 	leaf->key = NULL;
 	leaf->value = NULL;
 	
@@ -589,10 +582,10 @@ void COLD_recycle_leaf(COLD cold, unsigned nodeIndex) {
 		next = head & COLD_entry_mask;
 		salt = (head & ~COLD_entry_mask) + COLD_entry_limit;
 		
-		COLD_assert(next != nodeIndex, "COLD_recycle_leaf %02X next " COLD_NODE_FMT, nodeIndex, head);
-		COLD_assert(next <= COLD_leaf_count, "COLD_recycle_leaf %02X next " COLD_NODE_FMT, nodeIndex, head);
+		COLD_assert(next != nodeIndex, "COLD_recycle_leaf %02X next " COLD_LINK_FMT, nodeIndex, head);
+		COLD_assert(next <= COLD_leaf_count, "COLD_recycle_leaf %02X next " COLD_LINK_FMT, nodeIndex, head);
 		leaf->link = next;
-	} while ( !COLD_atomic_casn(pool, head, nodeIndex + salt) );
+	} while ( !COLD_atomic_casl(pool, head, nodeIndex + salt) );
 }
 
 void COLD_dispose_leaf(COLD cold, unsigned nodeIndex) {
@@ -851,7 +844,7 @@ unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) 
 				if ( COLD_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
 					COLD_trace("COLD_remove %08X @%2u[%u] node[%02X] " COLD_NODE_FMT " ==> " COLD_NODE_FMT, hash, depth, entryIndex, nodeIndex, node, changeNode);
 					COLD_assert(!recycled, "COLD_remove %02X " COLD_NODE_FMT " ==> " COLD_NODE_FMT, nodeIndex, node, changeNode);
-					COLD_atomic_addh(&leaves[COLD_leaf_index_pool].hash, -1);
+					COLD_atomic_addm(&cold->count, -1);
 					
 					if ( copyValueRemoved ) {
 						result = leaves[index].value;
@@ -1144,7 +1137,7 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 			unsigned recycled = COLD_test_bit(cold->recycle.bits, nodeIndex);
 			if ( COLD_atomic_casn(nodes + nodeIndex, node, changeNode) ) {
 				COLD_atomic_addm(&leaves[assignLeaf].references, -COLD_node_detached);
-				COLD_atomic_addh(&leaves[COLD_leaf_index_pool].hash, 1);
+				COLD_atomic_addm(&cold->count, 1);
 				COLD_trace("COLD_insert %08X @%2u[%u] node[%02X] " COLD_NODE_FMT " ==> " COLD_NODE_FMT " leaf[%2u] %p", hash, depth, entryIndex, nodeIndex, node, changeNode, assignLeaf, value);
 				COLD_assert(!recycled, "COLD_assign %02X " COLD_NODE_FMT " ==> " COLD_NODE_FMT, nodeIndex, node, changeNode);
 				disposeLeaf = 0;
@@ -1182,15 +1175,15 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 
 
 unsigned COLD_capacity(COLD const cold) {
-	return cold->leaves[COLD_leaf_index_pool].hash >> (COLD_bits_per_hash/2);
+	return cold->capacity;
 }
 
 unsigned COLD_count(COLD const cold) {
-	return cold->leaves[COLD_leaf_index_pool].hash & ((1 << (COLD_bits_per_hash/2)) - 1);
+	return cold->count;
 }
 
 unsigned COLD_is_empty(COLD const cold) {
-	return (cold->leaves[COLD_leaf_index_pool].hash & ((1 << (COLD_bits_per_hash/2)) - 1)) == 0;
+	return cold->count == 0;
 }
 
 unsigned COLD_enumerate(COLD const cold, COLD_enumerator enumerator, void *context) {
@@ -1325,15 +1318,15 @@ unsigned COLD_verify(COLD const cold) {
 		if ( is_acquired ) used_leaves += 1;
 		if ( is_recycled + is_released + is_acquired == 1 ) { continue; }
 		
-		COLD_assert(0, "COLD_verify %c%c%c leaf node %02X L" COLD_NODE_FMT " R%08X H%08X",
+		COLD_assert(0, "COLD_verify %c%c%c leaf node %02X R%08X H%08X",
 			is_acquired ? 'a' : '-', is_released ? 'r' : '-', is_recycled ? 'p' : '-',
-			leaf, leaves[leaf].link, references, leaves[leaf].hash);
+			leaf, references, leaves[leaf].link);
 		
 		unverified += 1;
 	}
 	
 	COLD_assert((pool->references & 0x0FFFFF) == 0, "COLD_verify references %08X", pool->references);
-	COLD_assert(used_leaves == (pool->hash & 0x0FFF), "COLD_verify leaves %u != %u", used_leaves, pool->hash & 0x0FFF);
+	COLD_assert(used_leaves == cold->count, "COLD_verify leaves %u != %u", used_leaves, cold->count);
 	
 	return unverified;
 }

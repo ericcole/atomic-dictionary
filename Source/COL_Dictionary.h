@@ -21,7 +21,7 @@ typedef struct COLD_Opaque *COLD;
 typedef unsigned (*COLD_equal_function)(COLD_data_t, COLD_data_t);
 ///	return the hash of the given value
 typedef COLD_hash_t (*COLD_hash_function)(COLD_data_t);
-///	return an immutable copy of value or retain value
+///	return an immutable copy of key or retain value
 typedef COLD_data_t (*COLD_retain_function)(COLD_data_t);
 ///	release or free value
 typedef void (*COLD_release_function)(COLD_data_t);
