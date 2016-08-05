@@ -37,13 +37,15 @@ unsigned COLD_equal_strings(COLD_data_t a, COLD_data_t b) {
 }
 
 COLD_call_t COLD_constant_string_key_calls = {
-	{NULL, NULL},
+	NULL,
+	NULL,
 	COLD_hash_bytes_null_terminated,
 	COLD_equal_strings,
 };
 
 COLD_call_t COLD_string_key_calls = {
-	{(COLD_data_t (*)(COLD_data_t))strdup, (void (*)(COLD_data_t))free},
+	(COLD_retain_function)strdup,
+	(COLD_release_function)free,
 	COLD_hash_bytes_null_terminated,
 	COLD_equal_strings,
 };

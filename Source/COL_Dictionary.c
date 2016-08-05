@@ -259,6 +259,12 @@ typedef struct COLD_Opaque {
 */
 
 
+#define COLD_call_retain(_calls, _data) ((_calls).retain(_data))
+#define COLD_call_release(_calls, _data) ((_calls).release(_data))
+#define COLD_call_hash(_calls, _data) ((_calls).hash(_data))
+#define COLD_call_equal(_calls, _a, _b) ((_calls).equal(_a, _b))
+
+
 #pragma mark - Logging
 
 
@@ -343,7 +349,7 @@ void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, 
 	unsigned i;
 	
 	cold->keyCalls = keyCalls ? *keyCalls : zeroCall;
-	cold->valueCalls = valueCalls ? *valueCalls : zeroCall.hold;
+	cold->valueCalls = valueCalls ? *valueCalls : *(COLD_hold_t *)&zeroCall;
 	
 	if ( cold->keyCalls.hash == NULL || cold->keyCalls.equal == NULL ) { cold->keyCalls.hash = COLD_hash_key; }
 	if ( cold->keyCalls.equal == NULL ) { cold->keyCalls.equal = COLD_equal_keys; }
@@ -368,7 +374,7 @@ void COLD_initialize(COLD cold, unsigned elements, COLD_call_t const *keyCalls, 
 
 
 void COLD_release_value(COLD cold, COLD_data_t value) {
-	if ( cold->valueCalls.release ) { cold->valueCalls.release(value); }
+	if ( cold->valueCalls.release ) { COLD_call_release(cold->valueCalls, value); }
 }
 
 
@@ -575,8 +581,8 @@ void COLD_recycle_leaf(COLD cold, unsigned nodeIndex) {
 	leaf->key = NULL;
 	leaf->value = NULL;
 	
-	if ( cold->keyCalls.hold.release ) { cold->keyCalls.hold.release(key); }
-	if ( cold->valueCalls.release ) { cold->valueCalls.release(value); }
+	if ( cold->keyCalls.release ) { COLD_call_release(cold->keyCalls, key); }
+	if ( cold->valueCalls.release ) { COLD_call_release(cold->valueCalls, value); }
 	
 	do {
 		head = *pool;
@@ -664,7 +670,7 @@ unsigned COLD_reclaim_tomb(COLD cold, unsigned nodeIndex, COLD_node_t node, unsi
 unsigned COLD_search(COLD cold, COLD_data_t key, COLD_data_t *copyValueFound) {
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
-	COLD_hash_t hash = cold->keyCalls.hash(key);
+	COLD_hash_t hash = COLD_call_hash(cold->keyCalls, key);
 	COLD_node_t volatile *nodes = cold->nodes;
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_node_t next, node;
@@ -725,11 +731,11 @@ unsigned COLD_search(COLD cold, COLD_data_t key, COLD_data_t *copyValueFound) {
 			else { break; }
 		}
 		
-		if ( leaves[index].hash == hash && cold->keyCalls.equal(leaves[index].key, key) ) {
+		if ( leaves[index].hash == hash && COLD_call_equal(cold->keyCalls, leaves[index].key, key) ) {
 			result = leaves[index].value;
 			
 			if ( copyValueFound && cold->valueCalls.retain ) {
-				result = cold->valueCalls.retain(result);
+				result = COLD_call_retain(cold->valueCalls, result);
 			}
 			
 			status = 1;
@@ -765,7 +771,7 @@ COLD_data_t COLD_copy_value(COLD cold, COLD_data_t key) {
 unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) {
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
-	COLD_hash_t hash = cold->keyCalls.hash(key);
+	COLD_hash_t hash = COLD_call_hash(cold->keyCalls, key);
 	COLD_node_t volatile *nodes = cold->nodes;
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_node_t next, node, changeNode;
@@ -838,7 +844,7 @@ unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) 
 				else { break; }
 			}
 			
-			if ( leaves[index].hash == hash && cold->keyCalls.equal(leaves[index].key, key) ) {
+			if ( leaves[index].hash == hash && COLD_call_equal(cold->keyCalls, leaves[index].key, key) ) {
 				changeNode = COLD_node_with_entry_at_index(node, 0, entryIndex);
 				
 				unsigned recycled = COLD_test_bit(cold->recycle.bits, nodeIndex);
@@ -850,7 +856,7 @@ unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) 
 					if ( copyValueRemoved ) {
 						result = leaves[index].value;
 						
-						if ( cold->valueCalls.retain ) { result = cold->valueCalls.retain(result); }
+						if ( cold->valueCalls.retain ) { result = COLD_call_retain(cold->valueCalls, result); }
 					}
 					
 					status = 1;
@@ -909,7 +915,7 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 	
 	COLD_data_t result = NULL;
 	COLD_math_t enter = COLD_enter(cold);
-	COLD_hash_t hash = cold->keyCalls.hash(key);
+	COLD_hash_t hash = COLD_call_hash(cold->keyCalls, key);
 	COLD_node_t volatile *nodes = cold->nodes;
 	COLD_leaf_t volatile *leaves = cold->leaves;
 	COLD_node_t next, node, changeNode = 0;
@@ -1020,7 +1026,7 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 					}
 					
 					action = Convert;
-				} else if ( cold->keyCalls.equal(leaves[index].key, key) ) {
+				} else if ( COLD_call_equal(cold->keyCalls, leaves[index].key, key) ) {
 					action = Replace;
 				} else if ( !list ) {
 					action = Append;
@@ -1071,9 +1077,9 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 				
 				COLD_data_t useKey = ( Replace == action ) ? leaves[index].key : key;
 				
-				leaves[assignLeaf].key = cold->keyCalls.hold.retain ? cold->keyCalls.hold.retain(useKey) : useKey;
+				leaves[assignLeaf].key = cold->keyCalls.retain ? COLD_call_retain(cold->keyCalls, useKey) : useKey;
 				leaves[assignLeaf].hash = hash;
-				leaves[assignLeaf].value = cold->valueCalls.retain ? cold->valueCalls.retain(value) : value;
+				leaves[assignLeaf].value = cold->valueCalls.retain ? COLD_call_retain(cold->valueCalls, value) : value;
 			}
 			
 			if ( Insert == action || Replace == action ) {
@@ -1149,7 +1155,7 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 			break;
 		}
 		
-		if ( Replace == action && copyValueReplaced && !retry && cold->valueCalls.retain ) { result = cold->valueCalls.retain(result); }
+		if ( Replace == action && copyValueReplaced && !retry && cold->valueCalls.retain ) { result = COLD_call_retain(cold->valueCalls, result); }
 		if ( releaseIndex ) { COLD_release_leaf(cold, releaseIndex); }
 	} while ( retry );
 	
@@ -1200,6 +1206,28 @@ unsigned COLD_enumerate(COLD const cold, COLD_enumerator enumerator, void *conte
 		
 		if ( !(leaf->references & COLD_node_detached) ) {
 			result = enumerator(leaf->key, leaf->value, context, leaf->hash);
+		}
+		
+		COLD_release_leaf(cold, index);
+	}
+	
+	return result;
+}
+
+unsigned COLD_enumerate_next(COLD const cold, unsigned prior, COLD_enumerator enumerator, void *context) {
+	unsigned result = 0;
+	unsigned index, capacity = COLD_capacity(cold);
+	COLD_leaf_t volatile *leaves = cold->leaves;
+	COLD_leaf_t volatile *leaf;
+	
+	for ( index = 1 + prior ; index <= capacity && !result ; ++index ) {
+		if ( !COLD_reserve_leaf(cold, index) ) { continue; }
+		
+		leaf = leaves + index;
+		
+		if ( !(leaf->references & COLD_node_detached) ) {
+			enumerator(leaf->key, leaf->value, context, leaf->hash);
+			result = index;
 		}
 		
 		COLD_release_leaf(cold, index);

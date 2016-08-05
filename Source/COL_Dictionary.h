@@ -32,7 +32,8 @@ typedef struct COLD_ValueCallbacks {
 } COLD_hold_t;
 
 typedef struct COLD_KeyCallbacks {
-	struct COLD_ValueCallbacks hold;
+	COLD_retain_function retain;
+	COLD_release_function release;
 	COLD_hash_function hash;
 	COLD_equal_function equal;
 } COLD_call_t;
@@ -144,6 +145,9 @@ typedef unsigned (*COLD_enumerator)(COLD_data_t key, COLD_data_t value, void *co
 
 /// COLD_enumerate passes each key value association to the enumerator and returns the first result other than zero
 unsigned COLD_enumerate(COLD cold, COLD_enumerator enumerator, void *context);
+
+/// COLD_enumerate_next passes one key value association to the enumerator or returns zero when there are no more
+unsigned COLD_enumerate_next(COLD const cold, unsigned prior, COLD_enumerator enumerator, void *context);
 
 
 /// COLD_hash_bytes quickly hashes data with the given length
