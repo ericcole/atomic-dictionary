@@ -588,18 +588,15 @@ void COLD_recycle_leaf(COLD cold, unsigned nodeIndex) {
 	} while ( !COLD_atomic_casl(pool, head, nodeIndex + salt) );
 }
 
-void COLD_dispose_leaf(COLD cold, unsigned nodeIndex) {
+void COLD_dispose_leaf(COLD cold, unsigned nodeIndex, COLD_math_t balance) {
 	COLD_assert(nodeIndex > 0 && nodeIndex <= COLD_leaf_count, "COLD_dispose_leaf %02X", nodeIndex);
-	if ( 0 == COLD_atomic_addm(&cold->leaves[nodeIndex].references, -COLD_node_acquired) ) {
+	if ( 0 == COLD_atomic_addm(&cold->leaves[nodeIndex].references, -balance) ) {
 		COLD_recycle_leaf(cold, nodeIndex);
 	}
 }
 
 void COLD_release_leaf(COLD cold, unsigned nodeIndex) {
-	COLD_assert(nodeIndex > 0 && nodeIndex <= COLD_leaf_count, "COLD_release_leaf %02X", nodeIndex);
-	if ( 0 == COLD_atomic_addm(&cold->leaves[nodeIndex].references, -COLD_node_reserved) ) {
-		COLD_recycle_leaf(cold, nodeIndex);
-	}
+	COLD_dispose_leaf(cold, nodeIndex, COLD_node_reserved);
 }
 
 unsigned COLD_reserve_leaf(COLD cold, unsigned nodeIndex) {
@@ -853,7 +850,7 @@ unsigned COLD_remove(COLD cold, COLD_data_t key, COLD_data_t *copyValueRemoved) 
 					}
 					
 					status = 1;
-					COLD_dispose_leaf(cold, index);
+					COLD_dispose_leaf(cold, index, COLD_node_acquired);
 				} else {
 					retry = 1;
 				}
@@ -1153,8 +1150,7 @@ unsigned COLD_assign(COLD cold, COLD_data_t key, COLD_data_t value, unsigned opt
 	} while ( retry );
 	
 	if ( disposeLeaf ) {
-		COLD_atomic_addm(&leaves[disposeLeaf].references, -COLD_node_detached);
-		COLD_dispose_leaf(cold, disposeLeaf);
+		COLD_dispose_leaf(cold, disposeLeaf, COLD_node_acquired + COLD_node_detached);
 	}
 	
 	if ( nodesAssigned < nodesAcquired ) {
